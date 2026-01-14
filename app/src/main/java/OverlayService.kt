@@ -1,10 +1,7 @@
 package com.example.test103
 
-import android.animation.AnimatorSet
-import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
@@ -46,6 +43,7 @@ class OverlayService : Service() {
     private var initialTouchX = 0f
     private var initialTouchY = 0f
 
+    // ---------- SERVICE LIFECYCLE ----------
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -63,6 +61,7 @@ class OverlayService : Service() {
         return START_NOT_STICKY
     }
 
+    // ---------- OVERLAY UI ----------
     private fun createOverlayButton() {
         mainButton = createMainButton("+")
         val muteButton = createSubButton("🔇")
@@ -74,7 +73,7 @@ class OverlayService : Service() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             setPadding(20, 15, 20, 15)
-            visibility = View.GONE // Start completely hidden
+            visibility = View.GONE
             alpha = 0f
         }
 
@@ -126,7 +125,6 @@ class OverlayService : Service() {
                         if (isExpanded && isViewClicked(cameraButton, event.rawX, event.rawY)) {
                             requestScreenshotPermission()
                         } else {
-                            // Result view is NOT passed here; only sub-buttons toggle
                             toggleExpand(muteButton, cameraButton)
                         }
                     } else if (isOverTrash()) { stopSelf() } else { snapToEdge() }
@@ -139,7 +137,6 @@ class OverlayService : Service() {
 
     private fun toggleExpand(vararg buttons: View) {
         isExpanded = !isExpanded
-        // Reset result view if contracting
         if (!isExpanded) {
             resultView.visibility = View.GONE
             resultView.alpha = 0f
@@ -165,14 +162,17 @@ class OverlayService : Service() {
         }
     }
 
+    // ---------- SCREENSHOT & AI CHECK ----------
     private fun processScreenshot(resultCode: Int, data: Intent) {
         val pm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val projection = pm.getMediaProjection(resultCode, data) ?: return
         val metrics = resources.displayMetrics
         val reader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
 
-        projection.createVirtualDisplay("Capture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null)
+        projection.createVirtualDisplay(
+            "Capture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null
+        )
 
         Handler(Looper.getMainLooper()).postDelayed({
             val img = reader.acquireLatestImage()
@@ -193,37 +193,35 @@ class OverlayService : Service() {
     }
 
     private fun checkAiImage(file: File) {
-        mainButton.text = "⌛" // Visual indicator that it's processing
+        mainButton.text = "⌛"
 
-        // REPLACE WITH YOUR ACTUAL KEYS
-        val apiUser = "958521540"
-        val apiSecret = "6vhjTqJ9qJpQo755FcQEpbkxgphfR3md"
-
-        val client = OkHttpClient()
+        // Send image to Render backend (Render stores your API keys)
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("media", file.name, file.asRequestBody("image/jpeg".toMediaType()))
-            .addFormDataPart("models", "genai")
-            .addFormDataPart("api_user", apiUser)
-            .addFormDataPart("api_secret", apiSecret)
             .build()
 
-        val request = Request.Builder().url("https://api.sightengine.com/1.0/check.json").post(body).build()
+        val request = Request.Builder()
+            .url("https://your-app.onrender.com/check-ai") // <-- Your Render URL
+            .post(body)
+            .build()
 
+        val client = OkHttpClient()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Handler(Looper.getMainLooper()).post { mainButton.text = "+" }
             }
+
             override fun onResponse(call: Call, response: Response) {
                 response.use {
                     try {
                         val json = JSONObject(it.body?.string() ?: "{}")
-                        val genai = json.optJSONObject("genai")
-                        val score = genai?.optDouble("confidence", 0.0) ?: 0.0
+                        val score = json.optDouble("score", 0.0)
+                        val isAi = json.optBoolean("isAi", false)
 
                         Handler(Looper.getMainLooper()).post {
                             mainButton.text = "+"
-                            displayResult(score > 0.5, score)
-                            if (file.exists()) file.delete() // Delete screenshot after use
+                            displayResult(isAi, score)
+                            if (file.exists()) file.delete()
                         }
                     } catch (e: Exception) {
                         Handler(Looper.getMainLooper()).post { mainButton.text = "+" }
@@ -234,18 +232,15 @@ class OverlayService : Service() {
     }
 
     private fun displayResult(isAi: Boolean, score: Double) {
-        resultView.text =  if (isAi) "AI ${(score * 100).toInt()}%" else "Likely Human ${(100 - score*100).toInt()}%"
-
+        resultView.text = if (isAi) "AI ${(score * 100).toInt()}%" else "Likely Human ${(100 - score*100).toInt()}%"
         resultView.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = 20f
-            setColor(color)
-            setStroke(4, 0xFFFF9800.toInt()) // Orange border
+            setColor(0xFF1E1E1E.toInt())
+            setStroke(4, 0xFFFF9800.toInt())
         }
-
         resultView.visibility = View.VISIBLE
 
-        // Grow the container to fit the result
         val currentHeight = overlayParams.height
         ValueAnimator.ofInt(currentHeight, currentHeight + 150).apply {
             duration = 300
@@ -258,41 +253,51 @@ class OverlayService : Service() {
         resultView.animate().alpha(1f).setDuration(300).start()
     }
 
-    // --- HELPER FUNCTIONS ---
+    // ---------- HELPERS ----------
     private fun createMainButton(icon: String) = TextView(this).apply {
         text = icon; textSize = 34f; gravity = Gravity.CENTER; setTextColor(Color.BLACK)
         layoutParams = LinearLayout.LayoutParams(BUTTON_SIZE, BUTTON_SIZE)
         background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFF9800.toInt()) }
     }
+
     private fun createSubButton(icon: String) = TextView(this).apply {
         text = icon; textSize = 26f; gravity = Gravity.CENTER
         layoutParams = LinearLayout.LayoutParams(160, 160).apply { topMargin = 25 }
         background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF333333.toInt()) }
     }
+
     private fun requestScreenshotPermission() {
         val intent = Intent(this, ScreenshotActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
         startActivity(intent)
     }
+
     private fun isViewClicked(view: View, x: Float, y: Float): Boolean {
         val loc = IntArray(2).also { view.getLocationOnScreen(it) }
         return Rect(loc[0], loc[1], loc[0] + view.width, loc[1] + view.height).contains(x.toInt(), y.toInt())
     }
+
     private fun createTrashButton() {
         trashView = TextView(this).apply {
             text = "✕"; textSize = 30f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFF3B30.toInt()) }
         }
-        trashParams = WindowManager.LayoutParams(220, 220, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT).apply {
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = 100
-        }
+        trashParams = WindowManager.LayoutParams(
+            220, 220, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = 100 }
     }
+
     private fun showTrash() { try { windowManager.addView(trashView, trashParams) } catch (e: Exception) {} }
     private fun hideTrash() { try { windowManager.removeView(trashView) } catch (e: Exception) {} }
+
     private fun isOverTrash(): Boolean {
         val tLoc = IntArray(2).also { trashView.getLocationOnScreen(it) }
         val oLoc = IntArray(2).also { overlayView.getLocationOnScreen(it) }
-        return Rect(tLoc[0], tLoc[1], tLoc[0] + trashView.width, tLoc[1] + trashView.height).contains(oLoc[0] + overlayView.width/2, oLoc[1] + overlayView.height/2)
+        return Rect(
+            tLoc[0], tLoc[1], tLoc[0] + trashView.width, tLoc[1] + trashView.height
+        ).contains(oLoc[0] + overlayView.width / 2, oLoc[1] + overlayView.height / 2)
     }
+
     private fun snapToEdge() {
         val screenWidth = resources.displayMetrics.widthPixels
         val targetX = if (overlayParams.x < screenWidth / 2) 0 else screenWidth - overlayView.width
@@ -302,6 +307,11 @@ class OverlayService : Service() {
             start()
         }
     }
-    override fun onDestroy() { super.onDestroy(); try { windowManager.removeView(overlayView) } catch (e: Exception) {} }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try { windowManager.removeView(overlayView) } catch (e: Exception) {}
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 }
