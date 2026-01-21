@@ -3,32 +3,128 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center"
     android:orientation="vertical"
-    android:padding="24dp"
-    android:background="#000000">
+    android:background="#000000"
+    android:fitsSystemWindows="true">
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnStart"
-        android:layout_width="292dp"
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabLayout"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="14dp"
-        android:text="Activate Overlay"
-        android:textColor="#FFFFFF"
-        android:textSize="16sp"
-        app:backgroundTint="#6200EE"
-        app:cornerRadius="16dp" />
+        android:background="#000000"
+        app:tabIndicatorColor="#03DAC5"
+        app:tabSelectedTextColor="#03DAC5"
+        app:tabTextColor="#6200EE"
+        app:tabMode="fixed"
+        app:tabGravity="fill"
+        app:tabIndicatorHeight="4dp">
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnStop"
-        android:layout_width="291dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:padding="14dp"
-        android:text="Deactivate Overlay"
-        android:textColor="#03DAC5"
-        android:textSize="16sp"
-        app:backgroundTint="#222222"
-        app:cornerRadius="16dp" />
+        <com.google.android.material.tabs.TabItem android:text="Overlay" />
+        <com.google.android.material.tabs.TabItem android:text="Detector" />
+        <com.google.android.material.tabs.TabItem android:text="Settings" />
+    </com.google.android.material.tabs.TabLayout>
 
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="24dp">
+
+        <LinearLayout
+            android:id="@+id/viewOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="visible">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnStart"
+                android:layout_width="280dp"
+                android:layout_height="wrap_content"
+                android:padding="16dp"
+                android:text="Activate Overlay"
+                android:textAllCaps="false"
+                android:textColor="@color/white"
+                app:backgroundTint="#6200EE"
+                app:cornerRadius="30dp"
+                app:elevation="12dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnStop"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="280dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:padding="16dp"
+                android:text="Deactivate overlay"
+                android:textAllCaps="false"
+                android:textColor="#03DAC5"
+                app:backgroundTint="#1A1A1A"
+                app:cornerRadius="30dp"
+                app:strokeWidth="0dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/viewDetector"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:visibility="gone">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="detector logs"
+                android:textAllCaps="false"
+                android:textColor="#6200EE"
+                android:textStyle="bold"
+                android:textSize="18sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/viewSettings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingTop="10dp"
+            android:visibility="gone">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="8dp"
+                app:cardBackgroundColor="#1A1A1A"
+                app:cardCornerRadius="40dp"
+                app:cardElevation="15dp"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="30dp"
+                    android:paddingEnd="20dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Crop Tool"
+                        android:textAllCaps="false"
+                        android:textColor="@color/white"
+                        android:textSize="16sp"
+                        />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/crop_switch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:thumbTint="@color/switch_teal_selector"
+                        app:trackTint="@color/switch_teal_track_selector" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </FrameLayout>
 </LinearLayout>

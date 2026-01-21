@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    // Fixes "Unresolved reference: kotlinx"
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
 }
 
@@ -37,9 +36,12 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
-    // Third Party Tools
+
+    // Networking and AI
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.json:json:20231013")
     implementation("io.github.cdimascio:dotenv-kotlin:6.4.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
