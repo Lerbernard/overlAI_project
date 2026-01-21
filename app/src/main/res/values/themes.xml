@@ -14,7 +14,7 @@
 
         <!-- Surfaces (Material 3 uses these instead of colorBackground) -->
         <item name="colorSurface">#121212</item>
-        <item name="colorOnSurface">#FFFFFF</item>
+        <item name="colorOnSurface">#000000</item>
 
         <!-- App window background -->
         <item name="android:windowBackground">#000000</item>

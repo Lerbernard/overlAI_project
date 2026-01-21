@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "test103"
+rootProject.name = "ovelAI project"
 include(":app")

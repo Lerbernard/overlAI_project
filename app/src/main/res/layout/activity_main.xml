@@ -13,11 +13,10 @@
         android:layout_width="292dp"
         android:layout_height="wrap_content"
         android:padding="14dp"
-        android:rotationX="0"
         android:text="Activate Overlay"
-        android:textColor="#000000"
+        android:textColor="#FFFFFF"
         android:textSize="16sp"
-        app:backgroundTint="#FF9800"
+        app:backgroundTint="#6200EE"
         app:cornerRadius="16dp" />
 
     <com.google.android.material.button.MaterialButton
@@ -27,7 +26,7 @@
         android:layout_marginTop="16dp"
         android:padding="14dp"
         android:text="Deactivate Overlay"
-        android:textColor="#FF9800"
+        android:textColor="#03DAC5"
         android:textSize="16sp"
         app:backgroundTint="#222222"
         app:cornerRadius="16dp" />
