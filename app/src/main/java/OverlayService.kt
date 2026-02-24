@@ -56,14 +56,6 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        createNotificationChannel()
-
-        val notification = createNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(1, notification)
-        }
         createOverlayUI()
     }
 
@@ -103,7 +95,8 @@ class OverlayService : Service() {
         }
 
         overlayView = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
             background = GradientDrawable().apply {
                 cornerRadius = dpToPx(20).toFloat()
                 setColor(Color.parseColor("#121212"))
@@ -140,10 +133,10 @@ class OverlayService : Service() {
         (mainButton.background as GradientDrawable).setColor(if (isExpanded) TEAL else PURPLE)
     }
 
+    // ✅ FIXED: No longer starts foreground here — just launches ScreenshotActivity
     private fun takeScreenshot() {
         if (isProcessing) return
 
-        // Always request fresh permission to ensure a fresh capture session
         val i = Intent(this, ScreenshotActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra("EXTRA_ACTION", "ACTION_SHOT")
@@ -158,7 +151,6 @@ class OverlayService : Service() {
 
         mainHandler.postDelayed({
             val m = resources.displayMetrics
-            // Re-initialize imageReader every time for a clean buffer
             imageReader = ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2)
 
             try {
@@ -178,12 +170,15 @@ class OverlayService : Service() {
                     val rowStride = plane.rowStride
                     val rowPadding = rowStride - pixelStride * m.widthPixels
 
-                    val bmp = Bitmap.createBitmap(m.widthPixels + rowPadding / pixelStride, m.heightPixels, Bitmap.Config.ARGB_8888)
+                    val bmp = Bitmap.createBitmap(
+                        m.widthPixels + rowPadding / pixelStride,
+                        m.heightPixels,
+                        Bitmap.Config.ARGB_8888
+                    )
                     bmp.copyPixelsFromBuffer(buffer)
                     val finalBmp = Bitmap.createBitmap(bmp, 0, 0, m.widthPixels, m.heightPixels)
                     img.close()
 
-                    // --- STOP EVERYTHING FOR REPEATABILITY ---
                     stopMediaProjection()
 
                     val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
@@ -192,36 +187,54 @@ class OverlayService : Service() {
                     mainHandler.post {
                         overlayView.visibility = View.VISIBLE
 
-                        // Always save the raw capture to input.png so the cropper is up to date
                         val inputFile = File(cacheDir, "input.png")
                         try {
                             FileOutputStream(inputFile).use {
                                 finalBmp.compress(Bitmap.CompressFormat.PNG, 100, it)
                             }
+                            inputFile.setReadable(true, false)
+                            inputFile.setWritable(true, false)
                         } catch (e: Exception) { e.printStackTrace() }
 
                         if (isCropEnabled) {
-                            val cropIntent = Intent(this@OverlayService, ScreenshotActivity::class.java).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                putExtra("EXTRA_ACTION", "ACTION_CROP")
-                            }
-                            startActivity(cropIntent)
+                            mainHandler.postDelayed({
+                                val cropIntent = Intent(this@OverlayService, ScreenshotActivity::class.java).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    putExtra("EXTRA_ACTION", "ACTION_CROP")
+                                }
+                                startActivity(cropIntent)
+                            }, 300)
                         } else {
                             resultText.visibility = View.VISIBLE
                             runAiDetection(finalBmp)
                         }
                         isProcessing = false
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            stopForeground(true)
+                        }
                     }
                 }, mainHandler)
+
             } catch (e: Exception) {
                 mainHandler.post {
                     isProcessing = false
                     overlayView.visibility = View.VISIBLE
                     updateStatus("ERR")
                     stopMediaProjection()
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        stopForeground(true)
+                    }
                 }
             }
-        }, 400) // Small delay to let overlay hide
+        }, 400)
     }
 
     private fun stopMediaProjection() {
@@ -285,7 +298,10 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP_SERVICE) { stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP_SERVICE) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         if (intent?.getStringExtra("EXTRA_ACTION") == "CROP_DONE") {
             val croppedFile = File(cacheDir, "output.png")
@@ -305,8 +321,16 @@ class OverlayService : Service() {
         val data = intent?.getParcelableExtra<Intent>("DATA")
 
         if (code == Activity.RESULT_OK && data != null) {
+            // ✅ FIXED: startForeground called HERE after we have the valid media projection token
+            createNotificationChannel()
+            val notification = createNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            } else {
+                startForeground(1, notification)
+            }
+
             val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            // Clear any old projection before starting a new one
             mediaProjection?.stop()
 
             val mp = mpManager.getMediaProjection(code, data)
@@ -318,9 +342,17 @@ class OverlayService : Service() {
             }, mainHandler)
 
             mediaProjection = mp
-            // Trigger capture immediately once we have the token
             performCapture(mp)
+
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
         }
+
         return START_STICKY
     }
 
@@ -345,6 +377,16 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         stopMediaProjection()
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (e: Exception) {}
+
         try { windowManager.removeView(overlayView) } catch (e: Exception) {}
         super.onDestroy()
     }

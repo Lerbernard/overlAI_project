@@ -5,6 +5,8 @@ import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.FileProvider
 import java.io.File
 
@@ -24,6 +26,16 @@ class ScreenshotActivity : Activity() {
     private fun launchCropper() {
         try {
             val inputFile = File(cacheDir, "input.png")
+
+            // Wait for file to be ready
+            if (!inputFile.exists() || inputFile.length() == 0L) {
+                // File not ready yet, wait a bit
+                Handler(Looper.getMainLooper()).postDelayed({
+                    launchCropper()
+                }, 100)
+                return
+            }
+
             val outputFile = File(cacheDir, "output.png")
 
             // Delete old output if it exists
