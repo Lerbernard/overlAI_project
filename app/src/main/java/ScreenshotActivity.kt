@@ -200,6 +200,8 @@ class ScreenshotActivity : Activity() {
                 startService(Intent(this, OverlayService::class.java).apply {
                     putExtra("RESULT_CODE", resultCode)
                     putExtra("DATA", data)
+                    // ✅ pass the requested mode (photo / video) through to the service
+                    putExtra("MODE", intent.getStringExtra("MODE") ?: "photo")
                 })
             } else {
                 notifyService("CAPTURE_DENIED")
