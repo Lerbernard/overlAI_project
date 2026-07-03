@@ -17,7 +17,7 @@
         app:tabTextColor="@color/lm_tab_text"
         app:tabMode="fixed"
         app:tabGravity="fill"
-        app:tabIndicatorHeight="4dp">
+        app:tabIndicatorHeight="3dp">
 
         <com.google.android.material.tabs.TabItem
             android:layout_width="wrap_content"
@@ -27,13 +27,17 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Detector" />
+        <!-- ✅ NEW: History tab -->
+        <com.google.android.material.tabs.TabItem
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="History" />
         <com.google.android.material.tabs.TabItem
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Settings" />
     </com.google.android.material.tabs.TabLayout>
 
-    <!-- ✅ id added so applyTheme() can target it -->
     <FrameLayout
         android:id="@+id/mainContainer"
         android:layout_width="match_parent"
@@ -86,6 +90,54 @@
             android:layout_height="match_parent"
             android:visibility="gone" />
 
+        <!-- ✅ NEW: HISTORY TAB (rows are added programmatically) -->
+        <LinearLayout
+            android:id="@+id/viewHistory"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:id="@+id/historyTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Recent detections"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/lm_text_primary" />
+
+                <TextView
+                    android:id="@+id/btnClearHistory"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:padding="8dp"
+                    android:text="Clear"
+                    android:textSize="14sp"
+                    android:textColor="@color/lm_primary" />
+            </LinearLayout>
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/historyList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
+        </LinearLayout>
+
         <!-- SETTINGS TAB -->
         <LinearLayout
             android:id="@+id/viewSettings"
@@ -100,7 +152,7 @@
                 android:layout_height="wrap_content"
                 android:layout_margin="8dp"
                 app:cardBackgroundColor="@color/lm_card"
-                app:cardCornerRadius="40dp"
+                app:cardCornerRadius="24dp"
                 app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
@@ -109,8 +161,8 @@
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:paddingStart="30dp"
-                    android:paddingEnd="20dp"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="16dp"
                     android:paddingTop="16dp"
                     android:paddingBottom="16dp">
 
@@ -136,7 +188,7 @@
                 android:layout_height="wrap_content"
                 android:layout_margin="8dp"
                 app:cardBackgroundColor="@color/lm_card"
-                app:cardCornerRadius="40dp"
+                app:cardCornerRadius="24dp"
                 app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
@@ -145,8 +197,8 @@
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:paddingStart="30dp"
-                    android:paddingEnd="20dp"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="16dp"
                     android:paddingTop="16dp"
                     android:paddingBottom="16dp">
 

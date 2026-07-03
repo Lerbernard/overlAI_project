@@ -27,27 +27,29 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
+/**
+ * Single-button overlay: the camera icon IS the whole UI.
+ * Tap → capture → the result circle slides in directly below the icon
+ * (or above it when the icon sits in the bottom 20% of the screen).
+ * Drag → full-width red delete zone at the bottom.
+ */
 class OverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
     private lateinit var overlayView: LinearLayout
-    private lateinit var mainButton: TextView
-    private lateinit var cameraBtn: TextView
+    private lateinit var cameraButton: CameraIconView
     private lateinit var resultText: TextView
     private lateinit var overlayParams: WindowManager.LayoutParams
 
-    // ✅ Full-width delete zone shown while dragging the bubble
     private var deleteZoneView: FrameLayout? = null
-    private var deleteZoneIcon: TextView? = null
     private var deleteZoneHighlighted = false
 
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
 
-    private var isExpanded = false
-    private var expandedUpward = false   // ✅ tracks which direction the menu opened
     private var isProcessing = false
+    private var resultAbove = false   // result placed above the icon (bottom 20%)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val client = OkHttpClient.Builder()
@@ -56,8 +58,7 @@ class OverlayService : Service() {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val PURPLE = Color.parseColor("#6200EE")
-    private val TEAL = Color.parseColor("#03DAC5")
+    private val BRIGHT_RED = Color.parseColor("#FF1744")
 
     companion object {
         const val ACTION_STOP_SERVICE = "ACTION_STOP_SERVICE"
@@ -68,7 +69,7 @@ class OverlayService : Service() {
 
     private val screenHeight: Int get() = resources.displayMetrics.heightPixels
     private val deleteZoneHeight: Int get() = dpToPx(120)
-    private val stepHeight: Int get() = dpToPx(50 + 10)   // sub button + its top/bottom margin
+    private val stepHeight: Int get() = dpToPx(46 + 8)
 
     override fun onCreate() {
         super.onCreate()
@@ -76,48 +77,37 @@ class OverlayService : Service() {
         createOverlayUI()
     }
 
-    private fun getRoundedRect(color: Int) = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = dpToPx(12).toFloat()
+    private fun circle(color: Int) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
         setColor(color)
+        setStroke(dpToPx(1), Color.parseColor("#33000000"))
     }
 
     private fun createOverlayUI() {
-        val mainSize = dpToPx(60)
-        val subSize = dpToPx(50)
+        val mainSize = dpToPx(56)
+        val subSize = dpToPx(46)
 
-        mainButton = TextView(this).apply {
-            text = "+"; textSize = 28f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            background = getRoundedRect(PURPLE)
+        cameraButton = CameraIconView(this).apply {
             layoutParams = LinearLayout.LayoutParams(mainSize, mainSize)
         }
 
-        cameraBtn = TextView(this).apply {
-            text = "📸"; textSize = 20f; gravity = Gravity.CENTER; visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(subSize, subSize).apply { topMargin = dpToPx(10) }
-            background = getRoundedRect(PURPLE)
-        }
-
         resultText = TextView(this).apply {
-            text = ""; textSize = 14f; setTypeface(null, Typeface.BOLD)
+            text = ""; textSize = 13f; setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER; setTextColor(Color.WHITE); visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(subSize, subSize).apply { topMargin = dpToPx(10) }
-            background = getRoundedRect(PURPLE)
+            layoutParams = LinearLayout.LayoutParams(subSize, subSize).apply { topMargin = dpToPx(8) }
+            background = circle(Color.GRAY)
+            // Tap the result to dismiss it
+            setOnClickListener { hideResultTile() }
         }
 
         overlayView = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
-            background = GradientDrawable().apply {
-                cornerRadius = dpToPx(20).toFloat()
-                setColor(Color.parseColor("#121212"))
-                alpha = 230
-            }
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+            background = null
         }
 
-        // Default (downward) order. toggleExpand() reorders when opening upward.
-        overlayView.addView(mainButton)
-        overlayView.addView(cameraBtn)
+        overlayView.addView(cameraButton)
         overlayView.addView(resultText)
 
         overlayParams = WindowManager.LayoutParams(
@@ -128,12 +118,11 @@ class OverlayService : Service() {
         ).apply { gravity = Gravity.TOP or Gravity.END; x = dpToPx(16); y = dpToPx(60) }
 
         makeDraggable()
-        cameraBtn.setOnClickListener { takeScreenshot() }
         windowManager.addView(overlayView, overlayParams)
     }
 
     // ---------------------------------------------------------------------
-    // Drag + full-width delete zone
+    // Drag (move / delete) + tap (capture)
     // ---------------------------------------------------------------------
 
     private fun makeDraggable() {
@@ -142,7 +131,7 @@ class OverlayService : Service() {
         var touchX = 0f; var touchY = 0f
         var dragging = false
 
-        mainButton.setOnTouchListener { _, event ->
+        cameraButton.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = overlayParams.x; startY = overlayParams.y
@@ -155,7 +144,7 @@ class OverlayService : Service() {
                     val dy = event.rawY - touchY
                     if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
                         dragging = true
-                        if (isExpanded) toggleExpand()   // collapse menu while dragging
+                        hideResultTile()
                         showDeleteZone()
                     }
                     if (dragging) {
@@ -171,11 +160,11 @@ class OverlayService : Service() {
                         val droppedInZone = event.rawY > screenHeight - deleteZoneHeight
                         hideDeleteZone()
                         if (droppedInZone && event.actionMasked == MotionEvent.ACTION_UP) {
-                            stopSelf()   // ✅ drag-to-trash replaces the delete button
+                            stopSelf()
                             return@setOnTouchListener true
                         }
                     } else if (event.actionMasked == MotionEvent.ACTION_UP) {
-                        toggleExpand()   // it was a tap
+                        takeScreenshot()   // ✅ tap = capture, no menu
                     }
                     true
                 }
@@ -184,27 +173,11 @@ class OverlayService : Service() {
         }
     }
 
-    /** Full-width red fade across the bottom of the screen, with a trash icon. */
     private fun showDeleteZone() {
         if (deleteZoneView != null) return
 
-        val icon = TextView(this).apply {
-            text = "🗑"
-            textSize = 32f
-            gravity = Gravity.CENTER
-        }
-        deleteZoneIcon = icon
-
         val zone = FrameLayout(this).apply {
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.TRANSPARENT, Color.parseColor("#66F44336"), Color.parseColor("#CCF44336"))
-            )
-            addView(icon, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
-            ).apply { bottomMargin = dpToPx(28) })
+            background = deleteZoneGradient(highlight = false)
             alpha = 0f
         }
 
@@ -212,7 +185,6 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.MATCH_PARENT,
             deleteZoneHeight,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            // NOT_TOUCHABLE so the zone never steals the drag gesture
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.BOTTOM }
@@ -220,35 +192,32 @@ class OverlayService : Service() {
         try {
             windowManager.addView(zone, params)
             deleteZoneView = zone
-            zone.animate().alpha(1f).setDuration(180).start()   // fade in
+            zone.animate().alpha(1f).setDuration(180).start()
         } catch (_: Exception) {}
+    }
+
+    private fun deleteZoneGradient(highlight: Boolean): GradientDrawable {
+        val colors = if (highlight) intArrayOf(
+            Color.parseColor("#66FF1744"),
+            Color.parseColor("#E6FF1744"),
+            BRIGHT_RED
+        ) else intArrayOf(
+            Color.TRANSPARENT,
+            Color.parseColor("#99FF1744"),
+            Color.parseColor("#E6FF1744")
+        )
+        return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors)
     }
 
     private fun setDeleteZoneHighlight(active: Boolean) {
         if (active == deleteZoneHighlighted) return
         deleteZoneHighlighted = active
-        val zone = deleteZoneView ?: return
-
-        if (active) {
-            // Brighter, more solid red + bigger trash icon while hovering
-            zone.background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#33F44336"), Color.parseColor("#B3F44336"), Color.parseColor("#F2D32F2F"))
-            )
-            deleteZoneIcon?.animate()?.scaleX(1.5f)?.scaleY(1.5f)?.setDuration(120)?.start()
-        } else {
-            zone.background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.TRANSPARENT, Color.parseColor("#66F44336"), Color.parseColor("#CCF44336"))
-            )
-            deleteZoneIcon?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(120)?.start()
-        }
+        deleteZoneView?.background = deleteZoneGradient(active)
     }
 
     private fun hideDeleteZone() {
         val zone = deleteZoneView ?: return
         deleteZoneView = null
-        deleteZoneIcon = null
         deleteZoneHighlighted = false
         zone.animate().alpha(0f).setDuration(180).withEndAction {
             try { windowManager.removeView(zone) } catch (_: Exception) {}
@@ -256,83 +225,54 @@ class OverlayService : Service() {
     }
 
     // ---------------------------------------------------------------------
-    // Expand / collapse — opens upward when the bubble is in the bottom half
+    // Result tile — expands below the icon (above when in bottom 20%)
     // ---------------------------------------------------------------------
 
-    private fun toggleExpand() {
-        isExpanded = !isExpanded
-
-        if (isExpanded) {
-            // Decide direction from the bubble's current position
-            val bubbleCenterY = overlayParams.y + overlayView.height / 2
-            expandedUpward = bubbleCenterY > screenHeight / 2
-
-            reorderChildren(upward = expandedUpward)
-            cameraBtn.visibility = View.VISIBLE
-
-            if (expandedUpward) {
-                // Anchor is the view's TOP, so growing content pushes downward by
-                // default. Shift the window up by the added height so the "+"
-                // button stays where it was and the menu appears above it.
-                overlayParams.y = (overlayParams.y - stepHeight).coerceAtLeast(0)
-                try { windowManager.updateViewLayout(overlayView, overlayParams) } catch (_: Exception) {}
-            }
-        } else {
-            cameraBtn.visibility = View.GONE
-            val resultWasVisible = resultText.visibility == View.VISIBLE
-            resultText.visibility = View.GONE
-
-            if (expandedUpward) {
-                var shift = stepHeight
-                if (resultWasVisible) shift += stepHeight
-                overlayParams.y += shift
-                try { windowManager.updateViewLayout(overlayView, overlayParams) } catch (_: Exception) {}
-            }
-            expandedUpward = false
-        }
-
-        mainButton.text = if (isExpanded) "✕" else "+"
-        (mainButton.background as GradientDrawable).setColor(if (isExpanded) TEAL else PURPLE)
-    }
-
-    /** Puts sub-buttons above or below the main button. */
-    private fun reorderChildren(upward: Boolean) {
-        overlayView.removeAllViews()
-        if (upward) {
-            overlayView.addView(resultText)
-            overlayView.addView(cameraBtn)
-            overlayView.addView(mainButton)
-            // In upward mode the margins should sit BELOW each sub item
-            (resultText.layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0; bottomMargin = dpToPx(10) }
-            (cameraBtn.layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0; bottomMargin = dpToPx(10) }
-        } else {
-            overlayView.addView(mainButton)
-            overlayView.addView(cameraBtn)
-            overlayView.addView(resultText)
-            (resultText.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dpToPx(10); bottomMargin = 0 }
-            (cameraBtn.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dpToPx(10); bottomMargin = 0 }
-        }
-    }
-
-    /** Shows the result tile, shifting the window up first if the menu opened upward. */
     private fun showResultTile() {
         mainHandler.post {
-            if (resultText.visibility != View.VISIBLE) {
-                if (expandedUpward) {
-                    overlayParams.y = (overlayParams.y - stepHeight).coerceAtLeast(0)
-                    try { windowManager.updateViewLayout(overlayView, overlayParams) } catch (_: Exception) {}
-                }
-                resultText.visibility = View.VISIBLE
+            if (resultText.visibility == View.VISIBLE) return@post
+
+            val centerY = overlayParams.y + overlayView.height / 2
+            resultAbove = centerY > screenHeight * 0.8
+
+            overlayView.removeAllViews()
+            if (resultAbove) {
+                overlayView.addView(resultText)
+                overlayView.addView(cameraButton)
+                (resultText.layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0; bottomMargin = dpToPx(8) }
+                overlayParams.y = (overlayParams.y - stepHeight).coerceAtLeast(0)
+                try { windowManager.updateViewLayout(overlayView, overlayParams) } catch (_: Exception) {}
+            } else {
+                overlayView.addView(cameraButton)
+                overlayView.addView(resultText)
+                (resultText.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dpToPx(8); bottomMargin = 0 }
+            }
+
+            resultText.visibility = View.VISIBLE
+            resultText.alpha = 0f
+            resultText.animate().alpha(1f).setDuration(150).start()
+        }
+    }
+
+    private fun hideResultTile() {
+        mainHandler.post {
+            if (resultText.visibility != View.VISIBLE) return@post
+            resultText.visibility = View.GONE
+            if (resultAbove) {
+                overlayParams.y += stepHeight
+                try { windowManager.updateViewLayout(overlayView, overlayParams) } catch (_: Exception) {}
+                resultAbove = false
             }
         }
     }
 
     // ---------------------------------------------------------------------
-    // Capture + detection (unchanged logic from previous update)
+    // Capture + detection
     // ---------------------------------------------------------------------
 
     private fun takeScreenshot() {
         if (isProcessing) return
+        hideResultTile()
         val i = Intent(this, ScreenshotActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra("EXTRA_ACTION", "ACTION_SHOT")
@@ -464,9 +404,8 @@ class OverlayService : Service() {
             FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
         } catch (e: Exception) {
             updateStatus("FILE ERR")
-            return
-        } finally {
             bitmap.recycle()
+            return
         }
 
         val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -482,15 +421,25 @@ class OverlayService : Service() {
             .build()
 
         client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) { updateStatus("NET ERR") }
+            override fun onFailure(call: Call, e: IOException) {
+                bitmap.recycle()
+                updateStatus("NET ERR")
+            }
             override fun onResponse(call: Call, response: Response) {
                 response.use {
-                    if (!it.isSuccessful) { updateStatus("API ${it.code}"); return }
+                    if (!it.isSuccessful) {
+                        bitmap.recycle()
+                        updateStatus("API ${it.code}"); return
+                    }
                     try {
                         val json = JSONObject(it.body?.string() ?: "{}")
                         val score = json.optJSONObject("type")?.optDouble("ai_generated") ?: 0.0
-                        updateStatus("${(score * 100).toInt()}%")
+                        val pct = (score * 100).toInt()
+                        updateStatus("$pct%")
+                        // ✅ Record in history (with thumbnail)
+                        try { HistoryManager.add(this@OverlayService, pct, "Overlay", bitmap) } catch (_: Exception) {}
                     } catch (e: Exception) { updateStatus("JSON ERR") }
+                    finally { bitmap.recycle() }
                 }
             }
         })
@@ -505,7 +454,7 @@ class OverlayService : Service() {
                 !text.endsWith("%") -> Color.DKGRAY
                 pct < 30 -> Color.parseColor("#4CAF50")
                 pct < 70 -> Color.parseColor("#FF9800")
-                else -> Color.RED
+                else -> BRIGHT_RED
             }
             (resultText.background as GradientDrawable).setColor(color)
         }
@@ -533,7 +482,7 @@ class OverlayService : Service() {
             }
             "CROP_CANCELLED" -> {
                 isProcessing = false
-                resultText.visibility = View.GONE
+                hideResultTile()
                 return START_STICKY
             }
             "CROP_FAILED" -> {
@@ -544,7 +493,7 @@ class OverlayService : Service() {
             }
             "CAPTURE_DENIED" -> {
                 isProcessing = false
-                resultText.visibility = View.GONE
+                hideResultTile()
                 return START_STICKY
             }
         }
@@ -583,9 +532,9 @@ class OverlayService : Service() {
             } catch (e: Exception) {
                 resetAfterCapture("PERM ERR")
             }
-        } else {
-            stopForegroundCompat()
         }
+        // NOTE: no stopForeground() in the else branch — the service is only
+        // foreground during capture, and MainActivity now uses startService().
 
         return START_STICKY
     }
