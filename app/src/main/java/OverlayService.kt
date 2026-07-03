@@ -23,6 +23,8 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 class OverlayService : Service() {
 
@@ -40,8 +42,14 @@ class OverlayService : Service() {
 
     private var isExpanded = false
     private var isProcessing = false
-    private val client = OkHttpClient()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // ✅ Network timeouts so a dead connection can't hang the request forever
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     private val PURPLE = Color.parseColor("#6200EE")
     private val TEAL = Color.parseColor("#03DAC5")
@@ -116,10 +124,47 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.END; x = dpToPx(16); y = dpToPx(60) }
 
-        mainButton.setOnClickListener { toggleExpand() }
+        // ✅ NEW: draggable bubble. Tap still toggles expand; drag moves it.
+        makeDraggable()
+
         cameraBtn.setOnClickListener { takeScreenshot() }
         deleteBtn.setOnClickListener { stopSelf() }
         windowManager.addView(overlayView, overlayParams)
+    }
+
+    private fun makeDraggable() {
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var startX = 0; var startY = 0
+        var touchX = 0f; var touchY = 0f
+        var dragging = false
+
+        mainButton.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = overlayParams.x; startY = overlayParams.y
+                    touchX = event.rawX; touchY = event.rawY
+                    dragging = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - touchX
+                    val dy = event.rawY - touchY
+                    if (!dragging && (abs(dx) > slop || abs(dy) > slop)) dragging = true
+                    if (dragging) {
+                        // gravity is TOP|END, so x grows leftwards
+                        overlayParams.x = (startX - dx).toInt().coerceAtLeast(0)
+                        overlayParams.y = (startY + dy).toInt().coerceAtLeast(0)
+                        try { windowManager.updateViewLayout(overlayView, overlayParams) } catch (_: Exception) {}
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!dragging) toggleExpand()   // it was a tap
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     private fun toggleExpand() {
@@ -133,10 +178,8 @@ class OverlayService : Service() {
         (mainButton.background as GradientDrawable).setColor(if (isExpanded) TEAL else PURPLE)
     }
 
-    // ✅ FIXED: No longer starts foreground here — just launches ScreenshotActivity
     private fun takeScreenshot() {
         if (isProcessing) return
-
         val i = Intent(this, ScreenshotActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra("EXTRA_ACTION", "ACTION_SHOT")
@@ -153,6 +196,15 @@ class OverlayService : Service() {
             val m = resources.displayMetrics
             imageReader = ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2)
 
+            // ✅ Safety net: if no frame ever arrives, recover after 3s instead of hanging
+            val timeoutRunnable = Runnable {
+                if (isProcessing) {
+                    stopMediaProjection()
+                    resetAfterCapture("TIMEOUT")
+                }
+            }
+            mainHandler.postDelayed(timeoutRunnable, 3000)
+
             try {
                 virtualDisplay = mp.createVirtualDisplay(
                     "Screenshot", m.widthPixels, m.heightPixels, m.densityDpi,
@@ -162,7 +214,14 @@ class OverlayService : Service() {
 
                 imageReader?.setOnImageAvailableListener({ ir ->
                     ir.setOnImageAvailableListener(null, null)
-                    val img = ir.acquireLatestImage() ?: return@setOnImageAvailableListener
+                    mainHandler.removeCallbacks(timeoutRunnable)
+
+                    val img = ir.acquireLatestImage()
+                    if (img == null) {
+                        stopMediaProjection()
+                        resetAfterCapture("NO IMG")
+                        return@setOnImageAvailableListener
+                    }
 
                     val plane = img.planes[0]
                     val buffer = plane.buffer
@@ -170,13 +229,14 @@ class OverlayService : Service() {
                     val rowStride = plane.rowStride
                     val rowPadding = rowStride - pixelStride * m.widthPixels
 
-                    val bmp = Bitmap.createBitmap(
+                    val raw = Bitmap.createBitmap(
                         m.widthPixels + rowPadding / pixelStride,
                         m.heightPixels,
                         Bitmap.Config.ARGB_8888
                     )
-                    bmp.copyPixelsFromBuffer(buffer)
-                    val finalBmp = Bitmap.createBitmap(bmp, 0, 0, m.widthPixels, m.heightPixels)
+                    raw.copyPixelsFromBuffer(buffer)
+                    val finalBmp = Bitmap.createBitmap(raw, 0, 0, m.widthPixels, m.heightPixels)
+                    if (finalBmp !== raw) raw.recycle()   // ✅ free the padded copy
                     img.close()
 
                     stopMediaProjection()
@@ -188,53 +248,54 @@ class OverlayService : Service() {
                         overlayView.visibility = View.VISIBLE
 
                         val inputFile = File(cacheDir, "input.png")
+                        var saved = false
                         try {
                             FileOutputStream(inputFile).use {
                                 finalBmp.compress(Bitmap.CompressFormat.PNG, 100, it)
                             }
-                            inputFile.setReadable(true, false)
-                            inputFile.setWritable(true, false)
+                            saved = true
                         } catch (e: Exception) { e.printStackTrace() }
 
-                        if (isCropEnabled) {
-                            mainHandler.postDelayed({
-                                val cropIntent = Intent(this@OverlayService, ScreenshotActivity::class.java).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    putExtra("EXTRA_ACTION", "ACTION_CROP")
-                                }
-                                startActivity(cropIntent)
-                            }, 300)
+                        if (isCropEnabled && saved) {
+                            finalBmp.recycle()   // ScreenshotActivity reloads it from disk
+                            val cropIntent = Intent(this@OverlayService, ScreenshotActivity::class.java).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                putExtra("EXTRA_ACTION", "ACTION_CROP")
+                            }
+                            startActivity(cropIntent)
+                            // keep isProcessing = true until CROP_DONE / CROP_CANCELLED / CROP_FAILED
                         } else {
                             resultText.visibility = View.VISIBLE
                             runAiDetection(finalBmp)
+                            isProcessing = false
                         }
-                        isProcessing = false
-
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                            stopForeground(STOP_FOREGROUND_REMOVE)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            stopForeground(true)
-                        }
+                        stopForegroundCompat()
                     }
                 }, mainHandler)
 
             } catch (e: Exception) {
-                mainHandler.post {
-                    isProcessing = false
-                    overlayView.visibility = View.VISIBLE
-                    updateStatus("ERR")
-                    stopMediaProjection()
-
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        stopForeground(true)
-                    }
-                }
+                mainHandler.removeCallbacks(timeoutRunnable)
+                stopMediaProjection()
+                mainHandler.post { resetAfterCapture("ERR") }
             }
         }, 400)
+    }
+
+    private fun resetAfterCapture(status: String) {
+        isProcessing = false
+        overlayView.visibility = View.VISIBLE
+        resultText.visibility = View.VISIBLE
+        updateStatus(status)
+        stopForegroundCompat()
+    }
+
+    private fun stopForegroundCompat() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
     }
 
     private fun stopMediaProjection() {
@@ -247,19 +308,24 @@ class OverlayService : Service() {
     }
 
     private fun runAiDetection(bitmap: Bitmap) {
-        val file = File(cacheDir, "temp_detect.png")
+        val file = File(cacheDir, "temp_detect.jpg")
         try {
-            FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            // ✅ JPEG 90 instead of PNG 100: ~5-10x smaller upload, much faster on mobile data,
+            // no meaningful difference to the detector's score.
+            FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
         } catch (e: Exception) {
             updateStatus("FILE ERR")
             return
+        } finally {
+            bitmap.recycle()
         }
 
         val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("api_user", "958521540")
-            .addFormDataPart("api_secret", "6vhjTqJ9qJpQo755FcQEpbkxgphfR3md")
+            // ✅ Keys now come from BuildConfig (see build.gradle.kts) — never hardcode secrets
+            .addFormDataPart("api_user", BuildConfig.SE_API_USER)
+            .addFormDataPart("api_secret", BuildConfig.SE_API_SECRET)
             .addFormDataPart("models", "genai")
-            .addFormDataPart("media", file.name, file.asRequestBody("image/png".toMediaTypeOrNull()))
+            .addFormDataPart("media", file.name, file.asRequestBody("image/jpeg".toMediaTypeOrNull()))
             .build()
 
         val request = Request.Builder()
@@ -288,7 +354,7 @@ class OverlayService : Service() {
             val pct = text.replace("%", "").toIntOrNull() ?: 0
             val color = when {
                 text == "..." -> Color.GRAY
-                text.contains("ERR") -> Color.DKGRAY
+                !text.endsWith("%") -> Color.DKGRAY   // any error/status word
                 pct < 30 -> Color.parseColor("#4CAF50")
                 pct < 70 -> Color.parseColor("#FF9800")
                 else -> Color.RED
@@ -303,25 +369,49 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
-        if (intent?.getStringExtra("EXTRA_ACTION") == "CROP_DONE") {
-            val croppedFile = File(cacheDir, "output.png")
-            if (croppedFile.exists()) {
-                val bitmap = BitmapFactory.decodeFile(croppedFile.absolutePath)
+        when (intent?.getStringExtra("EXTRA_ACTION")) {
+            "CROP_DONE" -> {
+                isProcessing = false
+                val croppedFile = File(cacheDir, "output.png")
+                val bitmap = if (croppedFile.exists()) BitmapFactory.decodeFile(croppedFile.absolutePath) else null
                 if (bitmap != null) {
                     resultText.visibility = View.VISIBLE
                     runAiDetection(bitmap)
                 } else {
+                    resultText.visibility = View.VISIBLE
                     updateStatus("EMPTY")
                 }
+                return START_STICKY
             }
-            return START_STICKY
+            // ✅ NEW: crop cancelled or failed — reset cleanly instead of hanging on "..."
+            "CROP_CANCELLED" -> {
+                isProcessing = false
+                resultText.visibility = View.GONE
+                return START_STICKY
+            }
+            "CROP_FAILED" -> {
+                isProcessing = false
+                resultText.visibility = View.VISIBLE
+                updateStatus("CROP ERR")
+                return START_STICKY
+            }
+            "CAPTURE_DENIED" -> {
+                isProcessing = false
+                resultText.visibility = View.GONE
+                return START_STICKY
+            }
         }
 
         val code = intent?.getIntExtra("RESULT_CODE", -1) ?: -1
-        val data = intent?.getParcelableExtra<Intent>("DATA")
+        // ✅ getParcelableExtra(String) is deprecated on API 33+
+        val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra("DATA", Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra("DATA")
+        }
 
         if (code == Activity.RESULT_OK && data != null) {
-            // ✅ FIXED: startForeground called HERE after we have the valid media projection token
             createNotificationChannel()
             val notification = createNotification()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -333,24 +423,23 @@ class OverlayService : Service() {
             val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection?.stop()
 
-            val mp = mpManager.getMediaProjection(code, data)
-            mp.registerCallback(object : MediaProjection.Callback() {
-                override fun onStop() {
-                    mediaProjection = null
-                    virtualDisplay = null
-                }
-            }, mainHandler)
+            try {
+                val mp = mpManager.getMediaProjection(code, data)
+                mp.registerCallback(object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        mediaProjection = null
+                        virtualDisplay = null
+                    }
+                }, mainHandler)
 
-            mediaProjection = mp
-            performCapture(mp)
-
-        } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
+                mediaProjection = mp
+                performCapture(mp)
+            } catch (e: Exception) {
+                // ✅ Projection token can be invalid/expired on some OEMs — don't crash the service
+                resetAfterCapture("PERM ERR")
             }
+        } else {
+            stopForegroundCompat()
         }
 
         return START_STICKY
@@ -377,17 +466,8 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         stopMediaProjection()
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
-        } catch (e: Exception) {}
-
-        try { windowManager.removeView(overlayView) } catch (e: Exception) {}
+        try { stopForegroundCompat() } catch (_: Exception) {}
+        try { windowManager.removeView(overlayView) } catch (_: Exception) {}
         super.onDestroy()
     }
 

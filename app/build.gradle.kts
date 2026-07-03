@@ -1,8 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
 }
+
+// ✅ Read secrets from local.properties (which is git-ignored by default)
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val seApiUser: String = localProps.getProperty("SE_API_USER", "")
+val seApiSecret: String = localProps.getProperty("SE_API_SECRET", "")
 
 android {
     namespace = "com.example.test103"
@@ -15,6 +25,14 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ✅ Keys are injected at build time — never committed to git
+        buildConfigField("String", "SE_API_USER", "\"$seApiUser\"")
+        buildConfigField("String", "SE_API_SECRET", "\"$seApiSecret\"")
+    }
+
+    buildFeatures {
+        buildConfig = true   // required for buildConfigField on AGP 8+
     }
 
     buildTypes {
@@ -37,14 +55,13 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
 
-    // Networking and AI
+    // Networking (✅ duplicate okhttp line removed; dotenv-kotlin removed — it
+    // doesn't work on Android, BuildConfig replaces it)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.json:json:20231013")
-    implementation("io.github.cdimascio:dotenv-kotlin:6.4.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    implementation ("androidx.media3:media3-exoplayer:1.3.1")
-    implementation ("androidx.media3:media3-ui:1.3.1")
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

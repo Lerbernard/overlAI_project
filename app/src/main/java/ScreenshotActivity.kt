@@ -1,102 +1,156 @@
 package com.example.test103
 
 import android.app.Activity
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import androidx.core.content.FileProvider
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import java.io.File
+import java.io.FileOutputStream
 
+/**
+ * Handles two jobs:
+ *  1. ACTION_SHOT — asks for the MediaProjection permission and hands the token to OverlayService.
+ *  2. ACTION_CROP — shows the in-app CropView (replaces the old external
+ *     "com.android.camera.action.CROP" intent, which doesn't exist on most modern devices).
+ */
 class ScreenshotActivity : Activity() {
+
+    private var cropView: CropView? = null
+    private var retryCount = 0
+
+    companion object {
+        private const val MAX_FILE_RETRIES = 10   // 10 x 100ms = 1s max wait
+        private const val REQ_PROJECTION = 1001
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val action = intent.getStringExtra("EXTRA_ACTION")
 
-        if (action == "ACTION_CROP") {
-            launchCropper()
-        } else {
-            val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            startActivityForResult(projectionManager.createScreenCaptureIntent(), 1001)
+        when (intent.getStringExtra("EXTRA_ACTION")) {
+            "ACTION_CROP" -> loadScreenshotThenShowCropper()
+            else -> {
+                val pm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                startActivityForResult(pm.createScreenCaptureIntent(), REQ_PROJECTION)
+            }
         }
     }
 
-    private fun launchCropper() {
+    /** Waits (with a hard cap) for input.png to be flushed, then shows the crop UI. */
+    private fun loadScreenshotThenShowCropper() {
+        val inputFile = File(cacheDir, "input.png")
+
+        if (!inputFile.exists() || inputFile.length() == 0L) {
+            if (retryCount++ < MAX_FILE_RETRIES) {
+                Handler(Looper.getMainLooper()).postDelayed({ loadScreenshotThenShowCropper() }, 100)
+            } else {
+                // File never showed up — tell the service so it can reset its UI.
+                notifyService("CROP_FAILED")
+                finish()
+            }
+            return
+        }
+
+        val bitmap = BitmapFactory.decodeFile(inputFile.absolutePath)
+        if (bitmap == null) {
+            notifyService("CROP_FAILED")
+            finish()
+            return
+        }
+
+        showCropUi(bitmap)
+    }
+
+    private fun showCropUi(bitmap: android.graphics.Bitmap) {
+        val root = FrameLayout(this)
+        val crop = CropView(this, bitmap)
+        cropView = crop
+        root.addView(crop, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+        // Bottom button bar: Cancel | Detect
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(32, 24, 32, 48)
+        }
+
+        fun makeButton(label: String, bg: Int, onClick: () -> Unit) = Button(this).apply {
+            text = label
+            setTextColor(Color.WHITE)
+            setBackgroundColor(bg)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginStart = 16; marginEnd = 16 }
+            setOnClickListener { onClick() }
+        }
+
+        bar.addView(makeButton("Cancel", Color.parseColor("#555555")) {
+            notifyService("CROP_CANCELLED")
+            finish()
+        })
+
+        bar.addView(makeButton("Detect", Color.parseColor("#6200EE")) {
+            saveCropAndReturn()
+        })
+
+        root.addView(bar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM))
+
+        setContentView(root)
+    }
+
+    private fun saveCropAndReturn() {
         try {
-            val inputFile = File(cacheDir, "input.png")
-
-            // Wait for file to be ready
-            if (!inputFile.exists() || inputFile.length() == 0L) {
-                // File not ready yet, wait a bit
-                Handler(Looper.getMainLooper()).postDelayed({
-                    launchCropper()
-                }, 100)
-                return
+            val cropped = cropView?.getCroppedBitmap() ?: run {
+                notifyService("CROP_FAILED"); finish(); return
             }
-
             val outputFile = File(cacheDir, "output.png")
-
-            // Delete old output if it exists
-            if (outputFile.exists()) outputFile.delete()
-            outputFile.createNewFile()
-
-            val authority = "${packageName}.provider"
-            val inputUri = FileProvider.getUriForFile(this, authority, inputFile)
-            val outputUri = FileProvider.getUriForFile(this, authority, outputFile)
-
-            val intent = Intent("com.android.camera.action.CROP").apply {
-                setDataAndType(inputUri, "image/*")
-                putExtra("crop", "true")
-
-                // --- FREE ASPECT RATIO SETTINGS ---
-                // Setting these to 0 or excluding them allows free-form resizing
-                putExtra("aspectX", 0)
-                putExtra("aspectY", 0)
-                // Some newer gallery apps look for this specific flag
-                putExtra("fixedAspectRatio", false)
-                // ----------------------------------
-
-                putExtra("scale", true)
-                putExtra("return-data", false)
-                putExtra(android.provider.MediaStore.EXTRA_OUTPUT, outputUri)
-
-                // CRITICAL: Grant permissions for both reading the input and writing the output
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            FileOutputStream(outputFile).use {
+                cropped.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
             }
-
-            // On some devices, we need to explicitly grant permission to the resolving app
-            val resInfoList = packageManager.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
-            for (resolveInfo in resInfoList) {
-                val pkgName = resolveInfo.activityInfo.packageName
-                grantUriPermission(pkgName, outputUri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                // Also grant read permission to the input file
-                grantUriPermission(pkgName, inputUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-
-            startActivityForResult(intent, 1002)
+            notifyService("CROP_DONE")
         } catch (e: Exception) {
             e.printStackTrace()
+            notifyService("CROP_FAILED")
+        }
+        finish()
+    }
+
+    private fun notifyService(action: String) {
+        startService(Intent(this, OverlayService::class.java).apply {
+            putExtra("EXTRA_ACTION", action)
+        })
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PROJECTION) {
+            if (resultCode == RESULT_OK && data != null) {
+                startService(Intent(this, OverlayService::class.java).apply {
+                    putExtra("RESULT_CODE", resultCode)
+                    putExtra("DATA", data)
+                })
+            } else {
+                // User denied screen capture — reset the service UI instead of leaving "..."
+                notifyService("CAPTURE_DENIED")
+            }
             finish()
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode == 1001 && resultCode == RESULT_OK) {
-            val intent = Intent(this, OverlayService::class.java).apply {
-                putExtra("RESULT_CODE", resultCode)
-                putExtra("DATA", data)
-                putExtra("EXTRA_ACTION", this@ScreenshotActivity.intent.getStringExtra("EXTRA_ACTION"))
-            }
-            startService(intent)
-        } else if (requestCode == 1002) {
-            val intent = Intent(this, OverlayService::class.java).apply {
-                putExtra("EXTRA_ACTION", "CROP_DONE")
-            }
-            startService(intent)
-        }
-        finish()
+    override fun onBackPressed() {
+        // Back during crop = cancel, and make sure the service resets
+        if (cropView != null) notifyService("CROP_CANCELLED")
+        super.onBackPressed()
     }
 }

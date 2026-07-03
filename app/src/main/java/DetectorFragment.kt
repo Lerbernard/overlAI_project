@@ -11,6 +11,7 @@ import android.os.Looper
 import android.view.*
 import android.widget.*
 import androidx.fragment.app.Fragment
+import androidx.media3.common.BuildConfig
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.tabs.TabLayout
@@ -51,8 +52,8 @@ class DetectorFragment : Fragment() {
     private val PICK_VIDEO_REQUEST = 102
 
     companion object {
-        private const val API_USER   = "958521540"
-        private const val API_SECRET = "6vhjTqJ9qJpQo755FcQEpbkxgphfR3md"
+        private val API_USER   = BuildConfig.SE_API_USER   // was hardcoded
+        private val API_SECRET = BuildConfig.SE_API_SECRET
     }
 
     override fun onCreateView(
