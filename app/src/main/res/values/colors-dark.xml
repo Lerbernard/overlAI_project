@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark mode -->
+    <color name="dm_primary">#7C3AED</color>
+    <color name="dm_accent">#00BCD4</color>
+    <color name="dm_background">#000000</color>
+    <color name="dm_surface">#111118</color>
+    <color name="dm_card">#1A1A2A</color>
+    <color name="dm_text_primary">#F1F5F9</color>
+    <color name="dm_text_secondary">#94A3B8</color>
+    <color name="dm_tab_text">#7C3AED</color>
+    <color name="dm_tab_indicator">#00BCD4</color>
+    <color name="dm_btn_secondary">#1A1A2A</color>
+    <color name="dm_btn_secondary_text">#00BCD4</color>
+</resources>

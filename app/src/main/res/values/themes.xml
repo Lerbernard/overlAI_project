@@ -1,31 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- App theme -->
-    <style name="Theme.Test103" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-
-        <!-- Primary colors -->
-        <item name="colorPrimary">#FF9800</item>
-        <item name="colorOnPrimary">#000000</item>
-
-        <!-- Secondary / Accent -->
-        <item name="colorSecondary">#FF9800</item>
-        <item name="colorOnSecondary">#000000</item>
-
-        <!-- Surfaces (Material 3 uses these instead of colorBackground) -->
-        <item name="colorSurface">#121212</item>
-        <item name="colorOnSurface">#000000</item>
-
-        <!-- App window background -->
-        <item name="android:windowBackground">#000000</item>
-
-        <!-- Status bar -->
-        <item name="android:statusBarColor">#000000</item>
-
-        <!-- Ensure no ActionBar -->
+    <style name="Theme.Test103" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">@color/dm_primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/dm_accent</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <item name="android:windowBackground">@color/dm_background</item>
+        <item name="android:statusBarColor">@color/dm_background</item>
+        <item name="android:navigationBarColor">@color/dm_background</item>
         <item name="windowNoTitle">true</item>
         <item name="windowActionBar">false</item>
+    </style>
 
+    <style name="Theme.App.Light" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/lm_primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/lm_accent</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <item name="android:windowBackground">@color/lm_background</item>
+        <item name="android:statusBarColor">@color/lm_background</item>
+        <item name="android:navigationBarColor">@color/lm_background</item>
+        <item name="windowNoTitle">true</item>
+        <item name="windowActionBar">false</item>
+    </style>
+
+    <style name="Theme.App.Dark" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">@color/dm_primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/dm_accent</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <item name="android:windowBackground">@color/dm_background</item>
+        <item name="android:statusBarColor">@color/dm_background</item>
+        <item name="android:navigationBarColor">@color/dm_background</item>
+        <item name="windowNoTitle">true</item>
+        <item name="windowActionBar">false</item>
     </style>
 
 </resources>
