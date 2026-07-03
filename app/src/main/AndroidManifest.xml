@@ -24,11 +24,17 @@
             </intent-filter>
         </activity>
 
+        <!-- ✅ FIX: taskAffinity="" puts this activity in its OWN task, separate
+             from MainActivity. Without it, launching the permission dialog or
+             crop screen drags the whole app to the foreground, and finishing
+             the crop reveals MainActivity instead of the app the user was in. -->
         <activity
             android:name=".ScreenshotActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:excludeFromRecents="true"
             android:exported="false"
+            android:taskAffinity=""
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />
 
         <service
@@ -36,16 +42,6 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
-
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="com.example.test103.provider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
 
     </application>
 </manifest>

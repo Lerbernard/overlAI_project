@@ -11,7 +11,6 @@ import android.os.Looper
 import android.view.*
 import android.widget.*
 import androidx.fragment.app.Fragment
-import androidx.media3.common.BuildConfig
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.tabs.TabLayout

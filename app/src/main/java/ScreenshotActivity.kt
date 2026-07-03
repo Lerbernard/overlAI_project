@@ -1,26 +1,34 @@
 package com.example.test103
 
 import android.app.Activity
+import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.content.Intent
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 import java.io.File
 import java.io.FileOutputStream
 
 /**
  * Handles two jobs:
  *  1. ACTION_SHOT — asks for the MediaProjection permission and hands the token to OverlayService.
- *  2. ACTION_CROP — shows the in-app CropView (replaces the old external
- *     "com.android.camera.action.CROP" intent, which doesn't exist on most modern devices).
+ *  2. ACTION_CROP — shows the in-app CropView.
+ *
+ * NOTE: this activity must have android:taskAffinity="" in the manifest so it
+ * runs in its OWN task. Otherwise launching it drags MainActivity's task to the
+ * foreground, and finishing the crop dumps the user back into the app instead
+ * of the app they were actually looking at.
  */
 class ScreenshotActivity : Activity() {
 
@@ -28,9 +36,13 @@ class ScreenshotActivity : Activity() {
     private var retryCount = 0
 
     companion object {
-        private const val MAX_FILE_RETRIES = 10   // 10 x 100ms = 1s max wait
+        private const val MAX_FILE_RETRIES = 10
         private const val REQ_PROJECTION = 1001
+        private val PURPLE = Color.parseColor("#6200EE")
     }
+
+    private fun dp(v: Int): Int = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,7 +56,6 @@ class ScreenshotActivity : Activity() {
         }
     }
 
-    /** Waits (with a hard cap) for input.png to be flushed, then shows the crop UI. */
     private fun loadScreenshotThenShowCropper() {
         val inputFile = File(cacheDir, "input.png")
 
@@ -52,7 +63,6 @@ class ScreenshotActivity : Activity() {
             if (retryCount++ < MAX_FILE_RETRIES) {
                 Handler(Looper.getMainLooper()).postDelayed({ loadScreenshotThenShowCropper() }, 100)
             } else {
-                // File never showed up — tell the service so it can reset its UI.
                 notifyService("CROP_FAILED")
                 finish()
             }
@@ -69,42 +79,93 @@ class ScreenshotActivity : Activity() {
         showCropUi(bitmap)
     }
 
-    private fun showCropUi(bitmap: android.graphics.Bitmap) {
+    private fun showCropUi(bitmap: Bitmap) {
         val root = FrameLayout(this)
         val crop = CropView(this, bitmap)
         cropView = crop
         root.addView(crop, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
-        // Bottom button bar: Cancel | Detect
+        // ── Bottom scrim so the buttons are readable over any screenshot ──
+        val scrim = FrameLayout(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.TRANSPARENT, Color.parseColor("#B3000000"))
+            )
+        }
+        root.addView(scrim, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(140), Gravity.BOTTOM))
+
+        // ── Pill-shaped buttons ──
+        fun pill(label: String, bg: Int, textCol: Int, strokeCol: Int? = null) = TextView(this).apply {
+            text = label
+            textSize = 16f
+            setTypeface(null, Typeface.BOLD)
+            letterSpacing = 0.02f
+            gravity = Gravity.CENTER
+            setTextColor(textCol)
+            minWidth = dp(130)
+            setPadding(dp(28), dp(13), dp(28), dp(13))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(28).toFloat()
+                setColor(bg)
+                strokeCol?.let { setStroke(dp(1), it) }
+            }
+            isClickable = true
+            // simple press feedback
+            setOnTouchListener { v, e ->
+                when (e.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> v.alpha = 0.7f
+                    android.view.MotionEvent.ACTION_UP,
+                    android.view.MotionEvent.ACTION_CANCEL -> v.alpha = 1f
+                }
+                false
+            }
+        }
+
+        val cancelBtn = pill(
+            "Cancel",
+            bg = Color.parseColor("#33FFFFFF"),          // frosted translucent
+            textCol = Color.WHITE,
+            strokeCol = Color.parseColor("#66FFFFFF")
+        ).apply { setOnClickListener { notifyService("CROP_CANCELLED"); finish() } }
+
+        val detectBtn = pill(
+            "Detect",
+            bg = PURPLE,
+            textCol = Color.WHITE
+        ).apply { setOnClickListener { saveCropAndReturn() } }
+
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(32, 24, 32, 48)
         }
-
-        fun makeButton(label: String, bg: Int, onClick: () -> Unit) = Button(this).apply {
-            text = label
-            setTextColor(Color.WHITE)
-            setBackgroundColor(bg)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 16; marginEnd = 16 }
-            setOnClickListener { onClick() }
-        }
-
-        bar.addView(makeButton("Cancel", Color.parseColor("#555555")) {
-            notifyService("CROP_CANCELLED")
-            finish()
-        })
-
-        bar.addView(makeButton("Detect", Color.parseColor("#6200EE")) {
-            saveCropAndReturn()
-        })
+        bar.addView(cancelBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { marginEnd = dp(12) })
+        bar.addView(detectBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { marginStart = dp(12) })
 
         root.addView(bar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.BOTTOM))
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply { bottomMargin = dp(36) })
+
+        // Small hint above the buttons
+        val hint = TextView(this).apply {
+            text = "Drag the corners to select an area"
+            textSize = 13f
+            setTextColor(Color.parseColor("#CCFFFFFF"))
+            gravity = Gravity.CENTER
+        }
+        root.addView(hint, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply { bottomMargin = dp(96) })
 
         setContentView(root)
     }
@@ -116,7 +177,7 @@ class ScreenshotActivity : Activity() {
             }
             val outputFile = File(cacheDir, "output.png")
             FileOutputStream(outputFile).use {
-                cropped.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                cropped.compress(Bitmap.CompressFormat.PNG, 100, it)
             }
             notifyService("CROP_DONE")
         } catch (e: Exception) {
@@ -141,7 +202,6 @@ class ScreenshotActivity : Activity() {
                     putExtra("DATA", data)
                 })
             } else {
-                // User denied screen capture — reset the service UI instead of leaving "..."
                 notifyService("CAPTURE_DENIED")
             }
             finish()
@@ -149,7 +209,6 @@ class ScreenshotActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        // Back during crop = cancel, and make sure the service resets
         if (cropView != null) notifyService("CROP_CANCELLED")
         super.onBackPressed()
     }
