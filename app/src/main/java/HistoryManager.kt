@@ -35,8 +35,8 @@ object HistoryManager {
             try {
                 val dir = File(context.filesDir, "history").apply { mkdirs() }
                 val f = File(dir, "t_${System.currentTimeMillis()}.jpg")
-                val scaled = scaleDown(thumbnail, 240)
-                FileOutputStream(f).use { scaled.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+                val scaled = scaleDown(thumbnail, 640)   // bigger for the detail popup
+                FileOutputStream(f).use { scaled.compress(Bitmap.CompressFormat.JPEG, 85, it) }
                 if (scaled !== thumbnail) scaled.recycle()
                 thumbPath = f.absolutePath
             } catch (_: Exception) {}

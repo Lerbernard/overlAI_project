@@ -3,7 +3,9 @@ package com.example.test103
 import android.app.Activity.RESULT_OK
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -49,6 +51,7 @@ class DetectorFragment : Fragment() {
 
     private val PICK_IMAGE_REQUEST = 101
     private val PICK_VIDEO_REQUEST = 102
+    private val CROP_IMAGE_REQUEST = 103
 
     companion object {
         private val API_USER   = BuildConfig.SE_API_USER   // was hardcoded
@@ -164,15 +167,55 @@ class DetectorFragment : Fragment() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+
+        // ✅ Crop result carries no data uri — handle it before the null guard
+        if (requestCode == CROP_IMAGE_REQUEST) {
+            if (resultCode == RESULT_OK) {
+                val out = File(requireContext().cacheDir, "detector_crop_out.png")
+                val bmp = if (out.exists()) BitmapFactory.decodeFile(out.absolutePath) else null
+                if (bmp != null) {
+                    imagePreview.setImageBitmap(bmp)
+                    imagePreviewCard.visibility = View.VISIBLE
+                    imageResultText.text = ""
+                    detectImageFile(out)
+                } else {
+                    imageStatusText.text = "Crop failed."
+                }
+            } else {
+                imageStatusText.text = "Crop cancelled."
+            }
+            return
+        }
+
         if (resultCode != RESULT_OK || data?.data == null) return
 
         when (requestCode) {
             PICK_IMAGE_REQUEST -> {
                 selectedImageUri = data.data
-                imagePreview.setImageURI(selectedImageUri)
-                imagePreviewCard.visibility = View.VISIBLE
                 imageResultText.text = ""
-                runImageDetection(selectedImageUri!!)
+
+                val cropEnabled = requireContext()
+                    .getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("use_crop", true)
+
+                if (cropEnabled) {
+                    // ✅ Crop Tool is ON — crop before detecting, same as the overlay
+                    val input = copyUriToCache(selectedImageUri!!, "detector_crop_in.png")
+                    if (input != null) {
+                        startActivityForResult(
+                            Intent(requireContext(), CropActivity::class.java).apply {
+                                putExtra(CropActivity.EXTRA_INPUT, input.absolutePath)
+                                putExtra(CropActivity.EXTRA_OUTPUT,
+                                    File(requireContext().cacheDir, "detector_crop_out.png").absolutePath)
+                            }, CROP_IMAGE_REQUEST)
+                    } else {
+                        imageStatusText.text = "Failed to read file."
+                    }
+                } else {
+                    imagePreview.setImageURI(selectedImageUri)
+                    imagePreviewCard.visibility = View.VISIBLE
+                    runImageDetection(selectedImageUri!!)
+                }
             }
             PICK_VIDEO_REQUEST -> {
                 selectedVideoUri = data.data
@@ -201,15 +244,17 @@ class DetectorFragment : Fragment() {
     // ─── Image Detection ──────────────────────────────────────────────────────
 
     private fun runImageDetection(uri: Uri) {
+        val file = copyUriToCache(uri, "detector_image.png") ?: run {
+            imageStatusText.text = "Failed to read file."
+            return
+        }
+        detectImageFile(file)
+    }
+
+    private fun detectImageFile(file: File) {
         setImageLoading(true)
         imageStatusText.text = "Analysing…"
         imageResultText.text = ""
-
-        val file = copyUriToCache(uri, "detector_image.png") ?: run {
-            imageStatusText.text = "Failed to read file."
-            setImageLoading(false)
-            return
-        }
 
         val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("api_user", API_USER)
@@ -259,6 +304,12 @@ class DetectorFragment : Fragment() {
                         imageResultText.text = "$pct%"
                         imageStatusText.text = buildVerdict(pct)
                         imageResultText.setTextColor(scoreColor(pct))
+                        // ✅ record in History
+                        try {
+                            val thumb = BitmapFactory.decodeFile(file.absolutePath)
+                            HistoryManager.add(requireContext(), pct, "Image", thumb)
+                            thumb?.recycle()
+                        } catch (_: Exception) {}
                     } catch (e: Exception) {
                         imageStatusText.text = "Error: ${e.message} | $bodyStr"
                     }
@@ -334,6 +385,15 @@ class DetectorFragment : Fragment() {
                         videoResultText.text = "$pct%"
                         videoStatusText.text = buildVerdict(pct)
                         videoResultText.setTextColor(scoreColor(pct))
+                        // ✅ record in History (first frame as thumbnail)
+                        try {
+                            val r = MediaMetadataRetriever()
+                            r.setDataSource(file.absolutePath)
+                            val frame = r.getFrameAtTime(0)
+                            r.release()
+                            HistoryManager.add(requireContext(), pct, "Video", frame)
+                            frame?.recycle()
+                        } catch (_: Exception) {}
                     } catch (e: Exception) {
                         videoStatusText.text = "Error: ${e.message} | $bodyStr"
                     }

@@ -23,11 +23,11 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity
+            android:name=".CropActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
-        <!-- ✅ FIX: taskAffinity="" puts this activity in its OWN task, separate
-             from MainActivity. Without it, launching the permission dialog or
-             crop screen drags the whole app to the foreground, and finishing
-             the crop reveals MainActivity instead of the app the user was in. -->
         <activity
             android:name=".ScreenshotActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"

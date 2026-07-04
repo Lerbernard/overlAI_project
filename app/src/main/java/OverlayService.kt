@@ -72,6 +72,8 @@ class OverlayService : Service() {
         .build()
 
     private val BRIGHT_RED = Color.parseColor("#FF1744")
+    private val PURPLE = Color.parseColor("#6200EE")   // collapsed accent
+    private val TEAL = Color.parseColor("#03DAC5")     // expanded accent
 
     companion object {
         const val ACTION_STOP_SERVICE = "ACTION_STOP_SERVICE"
@@ -108,7 +110,7 @@ class OverlayService : Service() {
         mainButton = OutlineIconView(this, OutlineIconView.Mode.PLUS).apply {
             layoutParams = LinearLayout.LayoutParams(mainSize, mainSize)
             applyTheme(isDarkTheme)
-            setAccent(ThemeHelper.primary(this@OverlayService))   // ✅ app accent color
+            setAccent(PURPLE)   // ✅ purple when closed
         }
 
         photoBtn = subButton(OutlineIconView.Mode.PHOTO)
@@ -219,7 +221,7 @@ class OverlayService : Service() {
         mainButton.applyTheme(dark)
         photoBtn.applyTheme(dark)
         videoBtn.applyTheme(dark)
-        mainButton.setAccent(ThemeHelper.primary(this))   // ✅ accent follows the theme
+        mainButton.setAccent(TEAL)   // ✅ teal while expanded
         mainButton.setModeAndRedraw(OutlineIconView.Mode.CLOSE)
         relayout()
     }
@@ -228,7 +230,30 @@ class OverlayService : Service() {
         if (!isExpanded) return
         isExpanded = false
         mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
+        mainButton.setAccent(PURPLE)   // ✅ back to purple when closed
         relayout()
+    }
+
+    /**
+     * ✅ DRAG FIX: collapse WITHOUT touching the view tree. relayout() calls
+     * removeAllViews(), and removing the view currently being touched kills
+     * the active touch stream — that's what froze dragging and left the ✕ stuck.
+     * Here we only flip visibilities, which is safe mid-gesture.
+     */
+    private fun collapseForDrag() {
+        isExpanded = false
+        photoBtn.visibility = View.GONE
+        videoBtn.visibility = View.GONE
+        if (!isRecording) resultText.visibility = View.GONE
+        mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
+        mainButton.setAccent(PURPLE)
+
+        val newLift = if (upward && resultText.visibility == View.VISIBLE) 1 else 0
+        if (newLift != currentLift) {
+            overlayParams.y += (currentLift - newLift) * stepHeight
+            currentLift = newLift
+        }
+        if (resultText.visibility != View.VISIBLE) upward = false
     }
 
     // ---------------------------------------------------------------------
@@ -254,8 +279,7 @@ class OverlayService : Service() {
                     val dy = event.rawY - touchY
                     if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
                         dragging = true
-                        collapseMenu()
-                        if (!isRecording) { resultText.visibility = View.GONE; relayout() }
+                        collapseForDrag()   // ✅ never relayout() mid-gesture
                         showDeleteZone()
                     }
                     if (dragging) {

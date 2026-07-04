@@ -9,9 +9,16 @@ import com.google.android.material.card.MaterialCardView
 
 object ThemeHelper {
 
-    fun isDark(context: Context): Boolean =
-        context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            .getBoolean("dark_mode", true)
+    fun isDark(context: Context): Boolean {
+        val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        if (!prefs.contains("dark_mode")) {
+            // ✅ no saved choice yet — follow the device theme
+            val ui = context.resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            return ui == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        return prefs.getBoolean("dark_mode", true)
+    }
 
     fun primary(context: Context) = color(context,
         if (isDark(context)) R.color.dm_primary else R.color.lm_primary)

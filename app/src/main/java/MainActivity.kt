@@ -38,11 +38,6 @@ class MainActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
-        }
-
         supportRequestWindowFeature(Window.FEATURE_NO_TITLE)
         supportActionBar?.hide()
 
@@ -57,6 +52,27 @@ class MainActivity : AppCompatActivity() {
         val viewSettings   = findViewById<LinearLayout>(R.id.viewSettings)
         val cropSwitch     = findViewById<SwitchMaterial>(R.id.crop_switch)
         val darkModeSwitch = findViewById<SwitchMaterial>(R.id.dark_mode_switch)
+
+        // ✅ Gear tab hugs its icon; text tabs share the remaining width
+        tabLayout.post {
+            val strip = tabLayout.getChildAt(0) as LinearLayout
+            for (i in 0 until strip.childCount) {
+                val tab = strip.getChildAt(i)
+                val p = tab.layoutParams as LinearLayout.LayoutParams
+                if (i == 3) {
+                    p.width = LinearLayout.LayoutParams.WRAP_CONTENT
+                    p.weight = 0f
+                    tab.minimumWidth = 0
+                    tab.scaleX = 0.85f
+                    tab.scaleY = 0.85f
+                } else {
+                    p.width = 0
+                    p.weight = 1f
+                }
+                tab.layoutParams = p
+            }
+            strip.requestLayout()
+        }
 
         val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
         cropSwitch.isChecked     = prefs.getBoolean("use_crop", true)
@@ -214,8 +230,72 @@ class MainActivity : AppCompatActivity() {
                 }
             })
 
+            // ✅ Tap a row for the expanded popup
+            row.isClickable = true
+            row.setOnClickListener { showHistoryDialog(e) }
+
             list.addView(row)
         }
+    }
+
+    /** Popup with the enlarged image, score, verdict, source and date. */
+    private fun showHistoryDialog(e: HistoryManager.Entry) {
+        val t = ThemeHelper
+        val dateFmt = SimpleDateFormat("MMM d, yyyy · HH:mm", Locale.getDefault())
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(20), dp(20), dp(12))
+        }
+
+        val bmp: Bitmap? = e.thumbPath?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+        if (bmp != null) {
+            container.addView(ImageView(this).apply {
+                setImageBitmap(bmp)
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                clipToOutline = true
+                background = GradientDrawable().apply { cornerRadius = dp(14).toFloat() }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(300)
+                ).apply { bottomMargin = dp(16) }
+            })
+        }
+
+        val scoreColor = when {
+            e.score < 30 -> Color.parseColor("#4CAF50")
+            e.score < 70 -> Color.parseColor("#FF9800")
+            else -> Color.parseColor("#FF1744")
+        }
+        val verdict = when {
+            e.score < 30 -> "Likely real"
+            e.score < 70 -> "Uncertain"
+            else -> "Likely AI-generated"
+        }
+
+        container.addView(TextView(this).apply {
+            text = "${e.score}% · $verdict"
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(scoreColor)
+        })
+        container.addView(TextView(this).apply {
+            text = "${e.source} · ${dateFmt.format(Date(e.timestamp))}"
+            textSize = 13f
+            setTextColor(t.textSecondary(this@MainActivity))
+            setPadding(0, dp(4), 0, 0)
+        })
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setView(container)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
+            cornerRadius = dp(22).toFloat()
+            setColor(t.card(this@MainActivity))
+        })
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(t.primary(this))
     }
 
     // ---------------------------------------------------------------------
@@ -251,15 +331,9 @@ class MainActivity : AppCompatActivity() {
 
         t.applyTabTheme(this, findViewById(R.id.tabLayout))
 
-        // ✅ Tint the gear icon: accent when selected, secondary text color otherwise
+        // ✅ Gear matches the purple tab text in both states
         val tabs = findViewById<TabLayout>(R.id.tabLayout)
-        tabs.tabIconTint = android.content.res.ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_selected),
-                intArrayOf()
-            ),
-            intArrayOf(t.primary(this), t.textSecondary(this))
-        )
+        tabs.tabIconTint = android.content.res.ColorStateList.valueOf(t.primary(this))
 
         t.applyButtonTheme(
             this,
