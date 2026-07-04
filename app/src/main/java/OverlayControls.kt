@@ -145,3 +145,99 @@ class OverlayWidgetProvider : AppWidgetProvider() {
         }
     }
 }
+
+/**
+ * ✅ Second widget: dashboard-style — state, checks this month, last result.
+ * The bottom button toggles the overlay; everywhere else opens the app.
+ */
+class OverlayStatsWidget : AppWidgetProvider() {
+
+    override fun onUpdate(context: Context, mgr: AppWidgetManager, ids: IntArray) {
+        for (id in ids) mgr.updateAppWidget(id, buildViews(context))
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == ACTION_TOGGLE) {
+            if (OverlayService.isRunning) {
+                context.stopService(Intent(context, OverlayService::class.java))
+            } else if (Settings.canDrawOverlays(context)) {
+                ContextCompat.startForegroundService(context, Intent(context, OverlayService::class.java))
+            } else {
+                context.startActivity(Intent(context, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
+            android.os.Handler(context.mainLooper).postDelayed({ updateAll(context) }, 300)
+        }
+    }
+
+    companion object {
+        const val ACTION_TOGGLE = "com.example.test103.STATS_WIDGET_TOGGLE"
+
+        fun buildViews(context: Context): RemoteViews {
+            val v = RemoteViews(context.packageName, R.layout.widget_stats)
+            val on = OverlayService.isRunning
+
+            v.setInt(R.id.stats_root, "setBackgroundResource",
+                if (on) R.drawable.widget_bg_on else R.drawable.widget_bg)
+            v.setImageViewResource(R.id.stats_dot,
+                if (on) R.drawable.widget_dot_on else R.drawable.widget_dot_off)
+            v.setTextViewText(R.id.stats_status, if (on) "Overlay on" else "Overlay off")
+            v.setTextColor(R.id.stats_status,
+                if (on) Color.parseColor("#03DAC5") else Color.parseColor("#999999"))
+
+            val (img, vid) = UsageTracker.counts(context)
+            v.setTextViewText(R.id.stats_checks, "${img + vid}")
+
+            val last = HistoryManager.getAll(context).firstOrNull()
+            if (last == null) {
+                v.setTextViewText(R.id.stats_score, "—")
+                v.setTextColor(R.id.stats_score, Color.parseColor("#999999"))
+                v.setTextViewText(R.id.stats_when, "No checks yet")
+            } else {
+                val c = when {
+                    last.score < 30 -> Color.parseColor("#4CAF50")
+                    last.score < 70 -> Color.parseColor("#FF9800")
+                    else -> Color.parseColor("#FF1744")
+                }
+                v.setTextViewText(R.id.stats_score, "${last.score}%")
+                v.setTextColor(R.id.stats_score, c)
+                v.setTextViewText(R.id.stats_when,
+                    android.text.format.DateUtils.getRelativeTimeSpanString(last.timestamp))
+                // small decoded thumbnail (RemoteViews-safe size)
+                last.thumbPath?.let { p ->
+                    try {
+                        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                        val bmp = android.graphics.BitmapFactory.decodeFile(p, opts)
+                        if (bmp != null) v.setImageViewBitmap(R.id.stats_thumb, bmp)
+                    } catch (_: Exception) {}
+                }
+            }
+
+            v.setTextViewText(R.id.stats_action, if (on) "Deactivate" else "Activate")
+            v.setInt(R.id.stats_action, "setBackgroundResource",
+                if (on) R.drawable.widget_btn_gray else R.drawable.widget_btn_purple)
+
+            val toggle = Intent(context, OverlayStatsWidget::class.java).apply { action = ACTION_TOGGLE }
+            v.setOnClickPendingIntent(R.id.stats_action,
+                PendingIntent.getBroadcast(context, 2, toggle,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+
+            val open = Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            v.setOnClickPendingIntent(R.id.stats_root,
+                PendingIntent.getActivity(context, 3, open, PendingIntent.FLAG_IMMUTABLE))
+            return v
+        }
+
+        fun updateAll(context: Context) {
+            try {
+                val mgr = AppWidgetManager.getInstance(context)
+                val ids = mgr.getAppWidgetIds(ComponentName(context, OverlayStatsWidget::class.java))
+                if (ids.isNotEmpty()) mgr.updateAppWidget(ids, buildViews(context))
+            } catch (_: Exception) {}
+        }
+    }
+}

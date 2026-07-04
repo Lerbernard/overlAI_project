@@ -123,24 +123,17 @@ class DetectorFragment : Fragment() {
             override fun onTabReselected(tab: TabLayout.Tab?) {}
         })
 
+        // ✅ one "Choose media" button — auto-detects image vs video
+        btnPickVideo.visibility = View.GONE
+        btnPickImage.text = "Choose media"
         btnPickImage.setOnClickListener {
             clearImage()
-            startActivityForResult(
-                Intent.createChooser(
-                    Intent(Intent.ACTION_GET_CONTENT).apply { type = "image/*" },
-                    "Select Image"
-                ), PICK_IMAGE_REQUEST
-            )
-        }
-
-        btnPickVideo.setOnClickListener {
             clearVideo()
-            startActivityForResult(
-                Intent.createChooser(
-                    Intent(Intent.ACTION_GET_CONTENT).apply { type = "video/*" },
-                    "Select Video"
-                ), PICK_VIDEO_REQUEST
-            )
+            val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            }
+            startActivityForResult(Intent.createChooser(pick, "Select image or video"), PICK_IMAGE_REQUEST)
         }
     }
 
@@ -191,6 +184,17 @@ class DetectorFragment : Fragment() {
 
         when (requestCode) {
             PICK_IMAGE_REQUEST -> {
+                // ✅ shared picker: route videos to the video flow
+                val mime = requireContext().contentResolver.getType(data.data!!) ?: ""
+                if (mime.startsWith("video/")) {
+                    selectedVideoUri = data.data
+                    videoIsPrepared = false
+                    videoContainer.visibility = View.VISIBLE
+                    videoPreview.setVideoURI(selectedVideoUri)
+                    videoResultText.text = ""
+                    runVideoDetection(selectedVideoUri!!)
+                    return
+                }
                 selectedImageUri = data.data
                 imageResultText.text = ""
 
@@ -256,67 +260,26 @@ class DetectorFragment : Fragment() {
         imageStatusText.text = "Analysing…"
         imageResultText.text = ""
 
-        val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("api_user", API_USER)
-            .addFormDataPart("api_secret", API_SECRET)
-            .addFormDataPart("models", "genai")
-            .addFormDataPart("media", file.name, file.asRequestBody("image/png".toMediaTypeOrNull()))
-            .build()
-
-        client.newCall(
-            Request.Builder()
-                .url("https://api.sightengine.com/1.0/check.json")
-                .post(requestBody)
-                .build()
-        ).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                mainHandler.post {
-                    imageStatusText.text = "Network error: ${e.message}"
-                    setImageLoading(false)
-                }
-            }
-            override fun onResponse(call: Call, response: Response) {
-                val bodyStr = response.body?.string() ?: "{}"
-                android.util.Log.d("SIGHTENGINE_IMAGE", "Code: ${response.code} Body: $bodyStr")
-                mainHandler.post {
-                    if (!response.isSuccessful) {
-                        imageStatusText.text = "API error ${response.code}: $bodyStr"
-                        setImageLoading(false)
-                        return@post
-                    }
-                    try {
-                        val json = JSONObject(bodyStr)
-                        val score: Double =
-                            json.optJSONObject("type")
-                                ?.optDouble("ai_generated")
-                                ?.takeIf { !it.isNaN() }
-                                ?: json.optJSONObject("ai")
-                                    ?.optDouble("ai_generated")
-                                    ?.takeIf { !it.isNaN() }
-                                ?: json.optDouble("ai_generated")
-                                    .takeIf { !it.isNaN() && it != 0.0 }
-                                ?: run {
-                                    imageStatusText.text = "Response: $bodyStr"
-                                    setImageLoading(false)
-                                    return@post
-                                }
-                        val pct = (score * 100).toInt()
-                        imageResultText.text = "$pct%"
-                        imageStatusText.text = buildVerdict(pct)
-                        imageResultText.setTextColor(scoreColor(pct))
-                        // ✅ record in History
-                        try {
-                            val thumb = BitmapFactory.decodeFile(file.absolutePath)
-                            HistoryManager.add(requireContext(), pct, "Image", thumb)
-                            thumb?.recycle()
-                        } catch (_: Exception) {}
-                    } catch (e: Exception) {
-                        imageStatusText.text = "Error: ${e.message} | $bodyStr"
-                    }
-                    setImageLoading(false)
-                }
-            }
-        })
+        // ✅ shared pipeline: cache hits are free, real calls are counted,
+        // and errors come back as sentences
+        DetectionClient.detectImage(requireContext(), file,
+            onResult = { pct ->
+                if (!isAdded) return@detectImage
+                imageResultText.text = "$pct%"
+                imageStatusText.text = buildVerdict(pct)
+                imageResultText.setTextColor(scoreColor(pct))
+                try {
+                    val thumb = BitmapFactory.decodeFile(file.absolutePath)
+                    HistoryManager.add(requireContext(), pct, "Image", thumb)
+                    thumb?.recycle()
+                } catch (_: Exception) {}
+                setImageLoading(false)
+            },
+            onError = { msg ->
+                if (!isAdded) return@detectImage
+                imageStatusText.text = msg
+                setImageLoading(false)
+            })
     }
 
     // ─── Video Detection ──────────────────────────────────────────────────────
@@ -332,75 +295,27 @@ class DetectorFragment : Fragment() {
             return
         }
 
-        val mimeType = requireContext().contentResolver.getType(uri) ?: "video/mp4"
-
-        val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("api_user", API_USER)
-            .addFormDataPart("api_secret", API_SECRET)
-            .addFormDataPart("models", "genai")
-            .addFormDataPart("media", file.name, file.asRequestBody(mimeType.toMediaTypeOrNull()))
-            .build()
-
-        client.newCall(
-            Request.Builder()
-                .url("https://api.sightengine.com/1.0/video/check-sync.json")
-                .post(requestBody)
-                .build()
-        ).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                mainHandler.post {
-                    videoStatusText.text = "Network error: ${e.message}"
-                    setVideoLoading(false)
-                }
-            }
-            override fun onResponse(call: Call, response: Response) {
-                val bodyStr = response.body?.string() ?: "{}"
-                android.util.Log.d("SIGHTENGINE_VIDEO", "Code: ${response.code} Body: $bodyStr")
-                mainHandler.post {
-                    if (!response.isSuccessful) {
-                        videoStatusText.text = "API error ${response.code}: $bodyStr"
-                        setVideoLoading(false)
-                        return@post
-                    }
-                    try {
-                        val json = JSONObject(bodyStr)
-                        val score: Double =
-                            json.optJSONObject("summary")
-                                ?.optJSONObject("genai")
-                                ?.optDouble("ai_generated")
-                                ?.takeIf { !it.isNaN() }
-                                ?: json.optJSONObject("data")
-                                    ?.optJSONObject("frames")
-                                    ?.optDouble("ai_generated")
-                                    ?.takeIf { !it.isNaN() }
-                                ?: json.optJSONObject("type")
-                                    ?.optDouble("ai_generated")
-                                    ?.takeIf { !it.isNaN() }
-                                ?: run {
-                                    videoStatusText.text = "Response: $bodyStr"
-                                    setVideoLoading(false)
-                                    return@post
-                                }
-                        val pct = (score * 100).toInt()
-                        videoResultText.text = "$pct%"
-                        videoStatusText.text = buildVerdict(pct)
-                        videoResultText.setTextColor(scoreColor(pct))
-                        // ✅ record in History (first frame as thumbnail)
-                        try {
-                            val r = MediaMetadataRetriever()
-                            r.setDataSource(file.absolutePath)
-                            val frame = r.getFrameAtTime(0)
-                            r.release()
-                            HistoryManager.add(requireContext(), pct, "Video", frame)
-                            frame?.recycle()
-                        } catch (_: Exception) {}
-                    } catch (e: Exception) {
-                        videoStatusText.text = "Error: ${e.message} | $bodyStr"
-                    }
-                    setVideoLoading(false)
-                }
-            }
-        })
+        DetectionClient.detectVideo(requireContext(), file,
+            onResult = { pct ->
+                if (!isAdded) return@detectVideo
+                videoResultText.text = "$pct%"
+                videoStatusText.text = buildVerdict(pct)
+                videoResultText.setTextColor(scoreColor(pct))
+                try {
+                    val r = MediaMetadataRetriever()
+                    r.setDataSource(file.absolutePath)
+                    val frame = r.getFrameAtTime(0)
+                    r.release()
+                    HistoryManager.add(requireContext(), pct, "Video", frame)
+                    frame?.recycle()
+                } catch (_: Exception) {}
+                setVideoLoading(false)
+            },
+            onError = { msg ->
+                if (!isAdded) return@detectVideo
+                videoStatusText.text = msg
+                setVideoLoading(false)
+            })
     }
 
     // ─── Theme ────────────────────────────────────────────────────────────────

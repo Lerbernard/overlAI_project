@@ -179,6 +179,7 @@ class OverlayService : Service() {
         goForeground(capturing = false)
         OverlayTileService.refresh(this)
         OverlayWidgetProvider.updateAll(this)
+        OverlayStatsWidget.updateAll(this)
     }
 
     /** Foreground with the right type: specialUse while idle, +mediaProjection
@@ -984,6 +985,17 @@ class OverlayService : Service() {
             .build()
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // ✅ rotation: re-clamp so the bubble can't be stranded off-screen
+        if (isExpanded) collapseMenu()
+        hideDeleteZone()
+        overlayParams.x = overlayParams.x.coerceIn(
+            0, (screenWidth - rootView.width - edgePadding).coerceAtLeast(0))
+        overlayParams.y = clampWindowY(overlayParams.y)
+        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+    }
+
     override fun onDestroy() {
         if (isRecording) {
             isRecording = false
@@ -999,6 +1011,7 @@ class OverlayService : Service() {
         isRunning = false
         OverlayTileService.refresh(this)
         OverlayWidgetProvider.updateAll(this)
+        OverlayStatsWidget.updateAll(this)
         super.onDestroy()
     }
 

@@ -61,6 +61,9 @@ object HistoryManager {
         }
 
         prefs.edit().putString(KEY, newArr.toString()).apply()
+
+        // ✅ keep the stats widget's "last result" fresh
+        try { OverlayStatsWidget.updateAll(context) } catch (_: Exception) {}
     }
 
     fun getAll(context: Context): List<Entry> {

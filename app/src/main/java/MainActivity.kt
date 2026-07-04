@@ -129,17 +129,17 @@ class MainActivity : AppCompatActivity() {
             refreshHistory()
         }
 
-        findViewById<MaterialButton>(R.id.btnStart).setOnClickListener {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        // ✅ dashboard: one toggle button, state-aware
+        findViewById<MaterialButton>(R.id.btnToggleOverlay).setOnClickListener { btn ->
+            if (OverlayService.isRunning) {
+                stopService(Intent(this, OverlayService::class.java))
+                Toast.makeText(this, "Overlay deactivated", Toast.LENGTH_SHORT).show()
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                maybeShowPermissionIntro()
             } else {
                 startOverlayService()
             }
-        }
-
-        findViewById<MaterialButton>(R.id.btnStop).setOnClickListener {
-            stopService(Intent(this, OverlayService::class.java))
-            Toast.makeText(this, "Deactivated", Toast.LENGTH_SHORT).show()
+            btn.postDelayed({ refreshDashboard() }, 350)
         }
     }
 
@@ -152,7 +152,11 @@ class MainActivity : AppCompatActivity() {
         list.removeAllViews()
 
         val entries = HistoryManager.getAll(this)
-        val dateFmt = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
+        val dayKeyFmt = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
+        val dayLabelFmt = SimpleDateFormat("MMMM d", Locale.getDefault())
+        val todayKey = dayKeyFmt.format(Date())
+        val yesterdayKey = dayKeyFmt.format(Date(System.currentTimeMillis() - 86_400_000L))
+        var lastDayKey = ""
 
         if (entries.isEmpty()) {
             list.addView(TextView(this).apply {
@@ -166,6 +170,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         for (e in entries) {
+            // ✅ day-group headers: Today / Yesterday / date
+            val dayKey = dayKeyFmt.format(Date(e.timestamp))
+            if (dayKey != lastDayKey) {
+                lastDayKey = dayKey
+                list.addView(TextView(this).apply {
+                    text = when (dayKey) {
+                        todayKey -> "Today"
+                        yesterdayKey -> "Yesterday"
+                        else -> dayLabelFmt.format(Date(e.timestamp))
+                    }
+                    textSize = 13f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(ThemeHelper.textSecondary(this@MainActivity))
+                    setPadding(dp(4), dp(10), 0, dp(6))
+                })
+            }
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -205,7 +225,7 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(ThemeHelper.textPrimary(this@MainActivity))
             })
             mid.addView(TextView(this).apply {
-                text = dateFmt.format(Date(e.timestamp))
+                text = android.text.format.DateUtils.getRelativeTimeSpanString(e.timestamp)   // ✅ "2 hours ago"
                 textSize = 12f
                 setTextColor(ThemeHelper.textSecondary(this@MainActivity))
             })
@@ -369,18 +389,132 @@ class MainActivity : AppCompatActivity() {
         val tabs = findViewById<TabLayout>(R.id.tabLayout)
         tabs.tabIconTint = android.content.res.ColorStateList.valueOf(t.primary(this))
 
-        t.applyButtonTheme(
-            this,
-            findViewById(R.id.btnStart),
-            findViewById(R.id.btnStop)
-        )
-
         t.applyCardTheme(settingsLayout, this)
     }
 
     override fun onResume() {
         super.onResume()
         refreshUsage()
+        refreshDashboard()
+    }
+
+    /** ✅ Overlay tab dashboard: state card + stats, mirrors the widget. */
+    private fun refreshDashboard() {
+        val t = ThemeHelper
+        val on = OverlayService.isRunning
+        val teal = Color.parseColor("#03DAC5")
+
+        val card = findViewById<LinearLayout>(R.id.dashCard) ?: return
+        card.background = if (on) GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.parseColor("#5903DAC5"), t.card(this), t.card(this))
+        ).apply { cornerRadius = dp(26).toFloat() }
+        else GradientDrawable().apply { cornerRadius = dp(26).toFloat(); setColor(t.card(this@MainActivity)) }
+
+        findViewById<View>(R.id.dashDot).background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (on) teal else Color.parseColor("#888888"))
+        }
+        findViewById<TextView>(R.id.dashState).apply {
+            text = if (on) "Overlay is on" else "Overlay is off"
+            setTextColor(t.textPrimary(this@MainActivity))
+        }
+        findViewById<TextView>(R.id.dashSub).apply {
+            text = if (on) "Tap the floating button to check anything on screen"
+            else "Activate to check content in any app"
+            setTextColor(t.textSecondary(this@MainActivity))
+        }
+        findViewById<MaterialButton>(R.id.btnToggleOverlay).apply {
+            text = if (on) "Deactivate" else "Activate"
+            backgroundTintList = android.content.res.ColorStateList.valueOf(
+                if (on) Color.parseColor("#3A3A3E") else t.primary(this@MainActivity))
+            setTextColor(Color.WHITE)
+        }
+
+        // stats row
+        val cardBg = { GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(t.card(this@MainActivity)) } }
+        findViewById<LinearLayout>(R.id.statCard1)?.background = cardBg()
+        findViewById<LinearLayout>(R.id.statCard2)?.background = cardBg()
+        findViewById<TextView>(R.id.statChecksLabel)?.setTextColor(t.textSecondary(this))
+        findViewById<TextView>(R.id.statLastLabel)?.setTextColor(t.textSecondary(this))
+
+        val (img, vid) = UsageTracker.counts(this)
+        findViewById<TextView>(R.id.statChecks)?.apply {
+            text = "${img + vid}"
+            setTextColor(t.textPrimary(this@MainActivity))
+        }
+
+        val last = HistoryManager.getAll(this).firstOrNull()
+        val scoreTv = findViewById<TextView>(R.id.statScore)
+        val whenTv = findViewById<TextView>(R.id.statWhen)
+        val thumbIv = findViewById<ImageView>(R.id.statThumb)
+        if (last == null) {
+            scoreTv?.text = "—"; scoreTv?.setTextColor(t.textSecondary(this))
+            whenTv?.text = "No checks yet"; whenTv?.setTextColor(t.textSecondary(this))
+            thumbIv?.setImageBitmap(null)
+        } else {
+            val c = when {
+                last.score < 30 -> Color.parseColor("#4CAF50")
+                last.score < 70 -> Color.parseColor("#FF9800")
+                else -> Color.parseColor("#FF1744")
+            }
+            scoreTv?.text = "${last.score}%"; scoreTv?.setTextColor(c)
+            whenTv?.text = android.text.format.DateUtils.getRelativeTimeSpanString(last.timestamp)
+            whenTv?.setTextColor(t.textSecondary(this))
+            thumbIv?.let { iv ->
+                iv.background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat(); setColor(Color.parseColor("#22888888"))
+                }
+                iv.clipToOutline = true
+                iv.setImageBitmap(last.thumbPath?.let { p ->
+                    runCatching { BitmapFactory.decodeFile(p) }.getOrNull() })
+            }
+        }
+    }
+
+    /** ✅ friendly explanation before the scary system permission screen */
+    private fun maybeShowPermissionIntro() {
+        val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+        val goToSettings = {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")))
+        }
+        if (prefs.getBoolean("intro_shown", false)) { goToSettings(); return }
+
+        val t = ThemeHelper
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(24), dp(24), dp(28))
+            setBackgroundColor(t.card(this@MainActivity))
+        }
+        box.addView(TextView(this).apply {
+            text = "One quick permission"
+            textSize = 19f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(t.textPrimary(this@MainActivity))
+        })
+        box.addView(TextView(this).apply {
+            text = "OverlAI draws a small floating button over other apps so you can check images anywhere. Android will ask you to allow \"display over other apps\" — flip the switch for OverlAI, then come back and tap Activate again."
+            textSize = 14f
+            setTextColor(t.textSecondary(this@MainActivity))
+            setPadding(0, dp(10), 0, 0)
+        })
+        box.addView(MaterialButton(this).apply {
+            text = "Continue"
+            cornerRadius = dp(24)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(t.primary(this@MainActivity))
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                prefs.edit().putBoolean("intro_shown", true).apply()
+                sheet.dismiss()
+                goToSettings()
+            }
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(18) })
+        sheet.setContentView(box)
+        sheet.show()
     }
 
     /** ✅ monthly API usage shown in Settings */

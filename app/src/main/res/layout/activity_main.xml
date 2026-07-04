@@ -45,43 +45,144 @@
         android:layout_height="match_parent"
         android:padding="24dp">
 
-        <!-- OVERLAY TAB -->
+        <!-- OVERLAY TAB — status dashboard (styled in code for theming) -->
         <LinearLayout
             android:id="@+id/viewOverlay"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:gravity="center"
             android:orientation="vertical"
-            android:padding="20dp"
             android:visibility="visible">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnStart"
+            <LinearLayout
+                android:id="@+id/dashCard"
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="Activate Overlay"
-                android:textAllCaps="false"
-                android:textColor="@color/white"
-                app:backgroundTint="@color/lm_primary"
-                app:cornerRadius="30dp"
-                app:elevation="12dp" />
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="22dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnStop"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <View
+                        android:id="@+id/dashDot"
+                        android:layout_width="12dp"
+                        android:layout_height="12dp" />
+
+                    <TextView
+                        android:id="@+id/dashState"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:textSize="19sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/dashSub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnToggleOverlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="18dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:text="Activate"
+                    android:textAllCaps="false"
+                    app:cornerRadius="26dp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:layout_marginTop="20dp"
-                android:text="Deactivate Overlay"
-                android:textAllCaps="false"
-                android:textColor="@color/lm_btn_secondary_text"
-                app:backgroundTint="@color/lm_btn_secondary"
-                app:cornerRadius="30dp"
-                app:strokeWidth="0dp" />
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+
+                <LinearLayout
+                    android:id="@+id/statCard1"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="7dp"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/statChecksLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Checks this month"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/statChecks"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textSize="26sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/statCard2"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginStart="7dp"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/statLastLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Last result"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:id="@+id/statThumb"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:scaleType="centerCrop"
+                            android:contentDescription="Last checked media" />
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/statScore"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/statWhen"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
 
         <!-- DETECTOR TAB -->
@@ -179,8 +280,8 @@
                         android:id="@+id/crop_switch"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        app:thumbTint="@color/switch_teal_selector"
-                        app:trackTint="@color/switch_teal_track_selector" />
+                        app:thumbTint="@color/switch_purple_selector"
+                        app:trackTint="@color/switch_purple_track_selector" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -215,8 +316,8 @@
                         android:id="@+id/dark_mode_switch"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        app:thumbTint="@color/switch_teal_selector"
-                        app:trackTint="@color/switch_teal_track_selector" />
+                        app:thumbTint="@color/switch_purple_selector"
+                        app:trackTint="@color/switch_purple_track_selector" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
