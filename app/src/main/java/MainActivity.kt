@@ -357,6 +357,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.viewOverlay).setBackgroundColor(t.background(this))
         findViewById<LinearLayout>(R.id.viewHistory).setBackgroundColor(t.background(this))
         findViewById<TextView>(R.id.historyTitle).setTextColor(t.textPrimary(this))
+        findViewById<TextView>(R.id.usage_title)?.setTextColor(t.textPrimary(this))
+        findViewById<TextView>(R.id.usage_text)?.setTextColor(t.textSecondary(this))
         findViewById<TextView>(R.id.btnClearHistory).setTextColor(t.primary(this))
         val settingsLayout = findViewById<LinearLayout>(R.id.viewSettings)
         settingsLayout.setBackgroundColor(t.background(this))
@@ -374,6 +376,17 @@ class MainActivity : AppCompatActivity() {
         )
 
         t.applyCardTheme(settingsLayout, this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshUsage()
+    }
+
+    /** ✅ monthly API usage shown in Settings */
+    private fun refreshUsage() {
+        val (img, vid) = UsageTracker.counts(this)
+        findViewById<TextView>(R.id.usage_text)?.text = "Images: $img · Videos: $vid"
     }
 
     private fun startOverlayService() {

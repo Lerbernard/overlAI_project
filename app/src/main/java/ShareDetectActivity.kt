@@ -22,6 +22,7 @@ import android.widget.TextView
 import java.io.File
 import java.io.FileOutputStream
 
+
 class ShareDetectActivity : Activity() {
 
 private lateinit var statusText: TextView
@@ -62,6 +63,9 @@ progress.visibility = android.view.View.GONE
 }
 }
 }
+
+// ------------------------------------------------------------------
+
 private fun handleImage(uri: Uri) {
 val file = copyToCache(uri, "shared_image.jpg") ?: run { fail("Couldn't read the file"); return }
 val bmp = BitmapFactory.decodeFile(file.absolutePath)
@@ -69,7 +73,7 @@ if (bmp == null) { fail("Couldn't read the image"); return }
 preview.setImageBitmap(bmp)
 preview.visibility = android.view.View.VISIBLE
 
-DetectionClient.detectImage(file,
+DetectionClient.detectImage(this, file,
 onResult = { pct ->
 showScore(pct)
 try { HistoryManager.add(this, pct, "Shared", bmp) } catch (_: Exception) {}
@@ -96,7 +100,7 @@ preview.setImageBitmap(it)
 preview.visibility = android.view.View.VISIBLE
 }
 
-DetectionClient.detectVideo(file,
+DetectionClient.detectVideo(this, file,
 onResult = { pct ->
 showScore(pct)
 try { HistoryManager.add(this, pct, "Shared", frame) } catch (_: Exception) {}
@@ -131,18 +135,19 @@ progress.visibility = android.view.View.GONE
 statusText.text = msg
 }
 
-    private fun copyToCache(uri: Uri, name: String): File? {
-        return try {
-            val f = File(cacheDir, name)
-            val input = contentResolver.openInputStream(uri) ?: return null
-            input.use { inp ->
-                FileOutputStream(f).use { out -> inp.copyTo(out) }
-            }
-            f
-        } catch (e: Exception) {
-            null
-        }
-    }
+private fun copyToCache(uri: Uri, name: String): File? {
+return try {
+val f = File(cacheDir, name)
+val input = contentResolver.openInputStream(uri) ?: return null
+input.use { inp ->
+FileOutputStream(f).use { out -> inp.copyTo(out) }
+}
+f
+} catch (e: Exception) {
+null
+}
+}
+
 // ------------------------------------------------------------------
 
 private fun buildUi() {

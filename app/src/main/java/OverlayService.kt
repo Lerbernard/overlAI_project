@@ -75,12 +75,6 @@ class OverlayService : Service() {
     private var lastMode = "photo"        // which source produced the pending result
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
-
     private val BRIGHT_RED = Color.parseColor("#FF1744")
     private val PURPLE = Color.parseColor("#6200EE")
     private val TEAL = Color.parseColor("#03DAC5")
@@ -346,10 +340,10 @@ class OverlayService : Service() {
     private fun collapseMenu() {
         if (!isExpanded) return
         isExpanded = false
-        val keep = if (resultChip.visibility == View.VISIBLE)
-            (if (lastMode == "video") videoBtn else photoBtn) else null
-        photoBtn.visibility = if (keep === photoBtn) View.VISIBLE else View.GONE
-        videoBtn.visibility = if (keep === videoBtn) View.VISIBLE else View.GONE
+        // ✅ collapsing dismisses everything, answer included
+        photoBtn.visibility = View.GONE
+        videoBtn.visibility = View.GONE
+        resultChip.visibility = View.GONE
         mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
         mainButton.setGlyphTint(PURPLE)
         refreshPanel()
@@ -771,7 +765,7 @@ class OverlayService : Service() {
             stopMediaProjection()
             stopForegroundCompat()
             showResultChip()
-            updateStatus("REC ERR")
+            failStatus("REC ERR")
         }
     }
 
@@ -790,7 +784,7 @@ class OverlayService : Service() {
             updateStatus("SEND")
             runVideoDetection(recordFile)
         } else {
-            updateStatus("REC ERR")
+            failStatus("REC ERR")
         }
     }
 
@@ -801,61 +795,25 @@ class OverlayService : Service() {
     }
 
     private fun runVideoDetection(file: File) {
-        val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("api_user", BuildConfig.SE_API_USER)
-            .addFormDataPart("api_secret", BuildConfig.SE_API_SECRET)
-            .addFormDataPart("models", "genai")
-            .addFormDataPart("media", file.name, file.asRequestBody("video/mp4".toMediaTypeOrNull()))
-            .build()
-
-        val request = Request.Builder()
-            .url("https://api.sightengine.com/1.0/video/check-sync.json")
-            .post(requestBody)
-            .build()
-
-        client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) { updateStatus("NET ERR") }
-            override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    val bodyStr = it.body?.string() ?: "{}"
-                    if (!it.isSuccessful) { updateStatus("API ${it.code}"); return }
-                    try {
-                        val json = JSONObject(bodyStr)
-                        var score = json.optJSONObject("summary")
-                            ?.optJSONObject("genai")?.optDouble("ai_generated")
-                            ?.takeIf { d -> !d.isNaN() }
-                        if (score == null) {
-                            val frames = json.optJSONObject("data")?.optJSONArray("frames")
-                            if (frames != null && frames.length() > 0) {
-                                var maxScore = 0.0
-                                for (i in 0 until frames.length()) {
-                                    val v = frames.optJSONObject(i)?.optJSONObject("type")
-                                        ?.optDouble("ai_generated") ?: Double.NaN
-                                    if (!v.isNaN()) maxScore = max(maxScore, v)
-                                }
-                                score = maxScore
-                            }
-                        }
-                        if (score == null) { updateStatus("PARSE ERR"); return }
-
-                        val pct = (score * 100).toInt()
-                        updateStatus("$pct%")
-
-                        try {
-                            val retriever = MediaMetadataRetriever()
-                            retriever.setDataSource(file.absolutePath)
-                            val frame = retriever.getFrameAtTime(0)
-                            retriever.release()
-                            HistoryManager.add(this@OverlayService, pct, "Video", frame)
-                            frame?.recycle()
-                        } catch (_: Exception) {
-                            HistoryManager.add(this@OverlayService, pct, "Video", null)
-                        }
-                    } catch (e: Exception) { updateStatus("JSON ERR") }
-                    finally { file.delete() }
+        DetectionClient.detectVideo(this, file,
+            onResult = { pct ->
+                updateStatus("$pct%")
+                try {
+                    val retriever = MediaMetadataRetriever()
+                    retriever.setDataSource(file.absolutePath)
+                    val frame = retriever.getFrameAtTime(0)
+                    retriever.release()
+                    HistoryManager.add(this, pct, "Video", frame)
+                    frame?.recycle()
+                } catch (_: Exception) {
+                    HistoryManager.add(this, pct, "Video", null)
                 }
-            }
-        })
+                file.delete()
+            },
+            onError = { msg ->
+                failStatus(msg)
+                file.delete()
+            })
     }
 
     // ---------------------------------------------------------------------
@@ -866,8 +824,25 @@ class OverlayService : Service() {
         isProcessing = false
         rootView.visibility = View.VISIBLE
         showResultChip()
-        updateStatus(status)
+        failStatus(status)
         stopForegroundCompat()
+    }
+
+    /** ✅ short word in the pill + a human-readable toast */
+    private fun failStatus(code: String) {
+        val msg = when (code) {
+            "TIMEOUT" -> "Screen capture timed out — try again"
+            "NO IMG", "ERR", "PERM ERR" -> "Screen capture failed"
+            "CROP ERR" -> "Crop failed"
+            "EMPTY" -> "Nothing was selected"
+            "REC ERR" -> "Recording failed"
+            "FILE ERR" -> "Couldn't save the capture"
+            else -> code   // already human-readable (from DetectionClient)
+        }
+        updateStatus("Error")
+        mainHandler.post {
+            android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun runAiDetection(bitmap: Bitmap) {
@@ -875,39 +850,23 @@ class OverlayService : Service() {
         try {
             FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
         } catch (e: Exception) {
-            updateStatus("FILE ERR")
+            failStatus("FILE ERR")
             bitmap.recycle()
             return
         }
 
-        val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("api_user", BuildConfig.SE_API_USER)
-            .addFormDataPart("api_secret", BuildConfig.SE_API_SECRET)
-            .addFormDataPart("models", "genai")
-            .addFormDataPart("media", file.name, file.asRequestBody("image/jpeg".toMediaTypeOrNull()))
-            .build()
-
-        val request = Request.Builder()
-            .url("https://api.sightengine.com/1.0/check.json")
-            .post(requestBody)
-            .build()
-
-        client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) { bitmap.recycle(); updateStatus("NET ERR") }
-            override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    if (!it.isSuccessful) { bitmap.recycle(); updateStatus("API ${it.code}"); return }
-                    try {
-                        val json = JSONObject(it.body?.string() ?: "{}")
-                        val score = json.optJSONObject("type")?.optDouble("ai_generated") ?: 0.0
-                        val pct = (score * 100).toInt()
-                        updateStatus("$pct%")
-                        try { HistoryManager.add(this@OverlayService, pct, "Overlay", bitmap) } catch (_: Exception) {}
-                    } catch (e: Exception) { updateStatus("JSON ERR") }
-                    finally { bitmap.recycle() }
-                }
-            }
-        })
+        // ✅ shared pipeline: cached results are free, real calls are counted,
+        // and errors come back as sentences instead of codes
+        DetectionClient.detectImage(this, file,
+            onResult = { pct ->
+                updateStatus("$pct%")
+                try { HistoryManager.add(this, pct, "Overlay", bitmap) } catch (_: Exception) {}
+                bitmap.recycle()
+            },
+            onError = { msg ->
+                bitmap.recycle()
+                failStatus(msg)
+            })
     }
 
     // ---------------------------------------------------------------------
@@ -927,7 +886,7 @@ class OverlayService : Service() {
                 val croppedFile = File(cacheDir, "output.png")
                 val bitmap = if (croppedFile.exists()) BitmapFactory.decodeFile(croppedFile.absolutePath) else null
                 if (bitmap != null) { showResultChip(); runAiDetection(bitmap) }
-                else { showResultChip(); updateStatus("EMPTY") }
+                else { showResultChip(); failStatus("EMPTY") }
                 return START_STICKY
             }
             "CROP_CANCELLED", "CAPTURE_DENIED" -> {
@@ -937,7 +896,7 @@ class OverlayService : Service() {
             }
             "CROP_FAILED" -> {
                 isProcessing = false
-                showResultChip(); updateStatus("CROP ERR")
+                showResultChip(); failStatus("CROP ERR")
                 return START_STICKY
             }
         }

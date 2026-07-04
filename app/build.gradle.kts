@@ -19,7 +19,9 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.test103"
+        // ✅ REAL app identity. namespace stays com.example.test103 so no
+        // source files need to change — only the installed package ID is renamed.
+        applicationId = "com.lerbernard.overlai"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

@@ -102,14 +102,35 @@ class OverlayWidgetProvider : AppWidgetProvider() {
         fun buildViews(context: Context): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_overlay)
             val on = OverlayService.isRunning
-            views.setTextViewText(R.id.widget_status, if (on) "ON" else "OFF")
-            views.setTextColor(R.id.widget_status,
-                if (on) Color.parseColor("#03DAC5") else Color.parseColor("#888888"))
 
+            // ✅ Proton-style glow: teal gradient bleeds from the top while active
+            views.setInt(R.id.widget_root, "setBackgroundResource",
+                if (on) R.drawable.widget_bg_on else R.drawable.widget_bg)
+
+            views.setImageViewResource(R.id.widget_dot,
+                if (on) R.drawable.widget_dot_on else R.drawable.widget_dot_off)
+            views.setTextViewText(R.id.widget_status, if (on) "Overlay on" else "Overlay off")
+            views.setTextColor(R.id.widget_status,
+                if (on) Color.parseColor("#03DAC5") else Color.parseColor("#999999"))
+
+            // ✅ Proton-style: Activate (purple) / Deactivate (gray)
+            views.setTextViewText(R.id.widget_action, if (on) "Deactivate" else "Activate")
+            views.setInt(R.id.widget_action, "setBackgroundResource",
+                if (on) R.drawable.widget_btn_gray else R.drawable.widget_btn_purple)
+
+            // ✅ the button toggles the overlay…
             val toggle = Intent(context, OverlayWidgetProvider::class.java).apply { action = ACTION_TOGGLE }
-            views.setOnClickPendingIntent(R.id.widget_root,
+            views.setOnClickPendingIntent(R.id.widget_action,
                 PendingIntent.getBroadcast(context, 0, toggle,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+
+            // ✅ …while the rest of the widget opens the app
+            val open = Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val openPi = PendingIntent.getActivity(context, 1, open, PendingIntent.FLAG_IMMUTABLE)
+            views.setOnClickPendingIntent(R.id.widget_root, openPi)
+            views.setOnClickPendingIntent(R.id.widget_header, openPi)
             return views
         }
 
