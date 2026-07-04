@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- ✅ persistent "overlay is on" foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -23,11 +25,28 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <activity
-            android:name=".CropActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
+        <!-- ✅ SHARE TARGET: overlAI appears in the system share sheet for
+             images and videos from any app -->
+        <activity
+            android:name=".ShareDetectActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:label="Check with overlAI">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Overlay flow: own task so it never drags the app to the foreground -->
         <activity
             android:name=".ScreenshotActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
@@ -37,11 +56,49 @@
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize" />
 
+        <!-- Detector-tab crop: normal task so fragments get their result -->
+        <activity
+            android:name=".CropActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+        <!-- ✅ specialUse = persistent overlay notification;
+             mediaProjection type is added only during captures -->
         <service
             android:name=".OverlayService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="mediaProjection|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Screen overlay tool for on-demand AI-content detection" />
+        </service>
+
+        <!-- ✅ QUICK SETTINGS TILE (like Proton VPN's) -->
+        <service
+            android:name=".OverlayTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile"
+            android:label="overlAI"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- ✅ HOME SCREEN WIDGET -->
+        <receiver
+            android:name=".OverlayWidgetProvider"
+            android:exported="true"
+            android:label="overlAI">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.test103.WIDGET_TOGGLE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/overlay_widget_info" />
+        </receiver>
 
     </application>
 </manifest>

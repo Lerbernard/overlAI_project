@@ -230,6 +230,17 @@ class MainActivity : AppCompatActivity() {
                 }
             })
 
+            // ✅ small red trash to delete just this entry
+            row.addView(OutlineIconView(this, OutlineIconView.Mode.TRASH).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginStart = dp(10) }
+                applyTheme(ThemeHelper.isDark(this@MainActivity))
+                setGlyphTint(Color.parseColor("#FF1744"))
+                setOnClickListener {
+                    HistoryManager.remove(this@MainActivity, e.timestamp)
+                    refreshHistory()
+                }
+            })
+
             // ✅ Tap a row for the expanded popup
             row.isClickable = true
             row.setOnClickListener { showHistoryDialog(e) }
@@ -259,6 +270,9 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(300)
                 ).apply { bottomMargin = dp(16) }
+                // ✅ tap the image to open it fullscreen
+                isClickable = true
+                setOnClickListener { showFullImage(e.thumbPath!!) }
             })
         }
 
@@ -289,6 +303,10 @@ class MainActivity : AppCompatActivity() {
         val dialog = android.app.AlertDialog.Builder(this)
             .setView(container)
             .setPositiveButton("Close", null)
+            .setNegativeButton("Delete") { _, _ ->
+                HistoryManager.remove(this, e.timestamp)
+                refreshHistory()
+            }
             .create()
         dialog.show()
         dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
@@ -296,6 +314,20 @@ class MainActivity : AppCompatActivity() {
             setColor(t.card(this@MainActivity))
         })
         dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(t.primary(this))
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Color.parseColor("#FF1744"))
+    }
+
+    /** Fullscreen picture viewer — tap anywhere to close. */
+    private fun showFullImage(path: String) {
+        val bmp = runCatching { BitmapFactory.decodeFile(path) }.getOrNull() ?: return
+        val d = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        d.setContentView(ImageView(this).apply {
+            setImageBitmap(bmp)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
+            setOnClickListener { d.dismiss() }
+        })
+        d.show()
     }
 
     // ---------------------------------------------------------------------
@@ -345,13 +377,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startOverlayService() {
-        // ✅ CRASH FIX: use startService(), NOT startForegroundService().
-        // startForegroundService() requires the service to call startForeground()
-        // within ~5 seconds, but OverlayService intentionally delays that until it
-        // has a MediaProjection token (Android 14 rule). The unfulfilled promise
-        // was killing the app with ForegroundServiceDidNotStartInTimeException.
-        // startService() is allowed here because the app is in the foreground.
-        startService(Intent(this, OverlayService::class.java))
+        // ✅ ask for notification permission (Android 13+) so the persistent
+        // "overlay is on" notification can show
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
+        }
+        // ✅ safe again: the service now calls startForeground() immediately
+        // in onCreate (specialUse type), so the 5-second promise is honored
+        androidx.core.content.ContextCompat.startForegroundService(
+            this, Intent(this, OverlayService::class.java))
         Toast.makeText(this, "Activated", Toast.LENGTH_SHORT).show()
     }
 }

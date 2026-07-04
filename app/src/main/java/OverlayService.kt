@@ -1,5 +1,6 @@
 package com.example.test103
 
+import android.animation.ValueAnimator
 import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -15,6 +16,7 @@ import android.media.projection.MediaProjectionManager
 import android.os.*
 import android.util.TypedValue
 import android.view.*
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -28,28 +30,36 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.max
 
 /**
- * Overlay with dropdown:
- *   [+]  → tap → [○ camera] [○ video] outline icons appear (themed to app dark/light)
- * Photo → screenshot → (optional crop) → AI score in a result chip.
- * Record → screen recording (auto-stops at 30s), timer chip, tap chip to stop,
- *          then the video is sent to the Sightengine video endpoint.
- * Drag the icon → themed ✕ circle appears bottom-center; drop on it to close.
- * Menu opens upward when the icon sits in the bottom 20% of the screen.
+ * Floating overlay, v9.
+ *
+ * ARCHITECTURE: the window is a fixed-height FRAME tall enough for the fully
+ * expanded stack. The button column (stackView) gravitates to the TOP or
+ * BOTTOM of that frame. Expanding up or down is therefore pure view layout
+ * inside a window that never moves or resizes — perfectly smooth both ways,
+ * no gravity switching, no correction passes.
+ *
+ * Result: a colored pill attached to the stack showing [source icon | NN%].
+ * Drag: throwable (velocity fling), trash appears after 300ms, deletes only
+ * when the stack is close to it, snaps/flings to edges with padding.
  */
 class OverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
-    private lateinit var overlayView: LinearLayout
+    private lateinit var rootView: FrameLayout          // fixed-size window content
+    private lateinit var stackView: LinearLayout        // the visible column
     private lateinit var mainButton: OutlineIconView
     private lateinit var photoBtn: OutlineIconView
     private lateinit var videoBtn: OutlineIconView
-    private lateinit var resultText: TextView   // doubles as recording timer chip
+    private lateinit var resultChip: LinearLayout       // [mini icon | percentage]
+    private lateinit var resultLabel: TextView
     private lateinit var overlayParams: WindowManager.LayoutParams
 
-    private var deleteZoneView: OutlineIconView? = null
+    private var deleteZoneView: FrameLayout? = null
+    private var deleteIcon: OutlineIconView? = null
     private var deleteZoneHighlighted = false
 
     private var mediaProjection: MediaProjection? = null
@@ -61,8 +71,8 @@ class OverlayService : Service() {
     private var isProcessing = false
     private var isRecording = false
     private var recordStartMs = 0L
-    private var upward = false        // menu/result direction, decided when opening
-    private var currentLift = 0       // how many stepHeights the window is shifted up
+    private var stackAtBottom = false     // stack gravitates to frame bottom = grows upward
+    private var lastMode = "photo"        // which source produced the pending result
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val client = OkHttpClient.Builder()
@@ -72,236 +82,358 @@ class OverlayService : Service() {
         .build()
 
     private val BRIGHT_RED = Color.parseColor("#FF1744")
-    private val PURPLE = Color.parseColor("#6200EE")   // collapsed accent
-    private val TEAL = Color.parseColor("#03DAC5")     // expanded accent
+    private val PURPLE = Color.parseColor("#6200EE")
+    private val TEAL = Color.parseColor("#03DAC5")
 
     companion object {
         const val ACTION_STOP_SERVICE = "ACTION_STOP_SERVICE"
-        private const val MAX_RECORD_MS = 30_000L   // Sightengine sync endpoint wants short clips
+        private const val MAX_RECORD_MS = 30_000L
+        /** ✅ live state for the QS tile + widget */
+        @Volatile var isRunning = false
+            private set
     }
+
+    // ---------------------------------------------------------------------
+    // Geometry
+    // ---------------------------------------------------------------------
 
     private fun dpToPx(dp: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, dp.toFloat(), resources.displayMetrics).toInt()
 
-    private val screenHeight: Int get() = resources.displayMetrics.heightPixels
-    private val deleteZoneHeight: Int get() = dpToPx(120)
-    private val stepHeight: Int get() = dpToPx(46 + 8)
+    private val mainSize: Int get() = dpToPx(64)
+    private val subSize: Int get() = dpToPx(48)
+    private val gap: Int get() = dpToPx(8)              // ✅ ONE spacing everywhere
+    // frame tall enough for: main + photo + video + result pill + panel pad
+    private val frameHeight: Int get() = mainSize + 3 * (subSize + gap) + gap + dpToPx(4)
+
+    private val screenHeight: Int
+        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager.currentWindowMetrics.bounds.height()
+        } else {
+            val p = Point()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealSize(p)
+            p.y
+        }
+
+    private val screenWidth: Int
+        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager.currentWindowMetrics.bounds.width()
+        } else {
+            val p = Point()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealSize(p)
+            p.x
+        }
+
+    private val edgePadding: Int get() = dpToPx(18)
+    private val deleteWindowSize: Int get() = dpToPx(120)
+    private val deleteIconSize: Int get() = dpToPx(72)
+    private val deleteBottomOffset: Int get() = dpToPx(28)
+    private val deleteProximity: Int get() = dpToPx(80)
+
+    /** Where the main button's top edge is on screen, regardless of direction. */
+    private fun buttonTopOnScreen(): Int =
+        overlayParams.y + if (stackAtBottom) frameHeight - mainSize else 0
+
+    /** Window-y bounds that keep the main button fully on screen. */
+    private fun clampWindowY(y: Int): Int {
+        val minY = if (stackAtBottom) -(frameHeight - mainSize) else 0
+        val maxY = if (stackAtBottom) screenHeight - frameHeight else screenHeight - mainSize
+        return y.coerceIn(minY, maxY.coerceAtLeast(minY))
+    }
 
     private val isDarkTheme: Boolean
         get() = getSharedPreferences("app_settings", MODE_PRIVATE).getBoolean("dark_mode", true)
 
+    // ---------------------------------------------------------------------
+    // UI construction
+    // ---------------------------------------------------------------------
+
+    private fun themedPanel() = GradientDrawable().apply {
+        cornerRadius = dpToPx(32).toFloat()   // pill ends match the 64dp circle
+        if (isDarkTheme) {
+            setColor(Color.parseColor("#661A1A1C"))
+            setStroke(dpToPx(1), Color.parseColor("#26FFFFFF"))
+        } else {
+            setColor(Color.parseColor("#80FFFFFF"))
+            setStroke(dpToPx(1), Color.parseColor("#14000000"))
+        }
+    }
+
+    /** Panel + growth-side padding only while more than the button is showing. */
+    private fun refreshPanel() {
+        val showPanel = isExpanded || resultChip.visibility == View.VISIBLE
+        if (showPanel) {
+            if (stackAtBottom) stackView.setPadding(0, gap, 0, 0)
+            else stackView.setPadding(0, 0, 0, gap)
+            stackView.background = themedPanel()
+        } else {
+            stackView.setPadding(0, 0, 0, 0)
+            stackView.background = null
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createOverlayUI()
+        // ✅ persistent "overlay is on" notification via a specialUse
+        // foreground service — also makes startForegroundService() safe again
+        createNotificationChannel()
+        goForeground(capturing = false)
+        OverlayTileService.refresh(this)
+        OverlayWidgetProvider.updateAll(this)
+    }
+
+    /** Foreground with the right type: specialUse while idle, +mediaProjection
+     *  only while actually capturing (Android 14 forbids it earlier). */
+    private fun goForeground(capturing: Boolean) {
+        val notif = createNotification(recording = isRecording)
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                val type = if (capturing)
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                else ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                startForeground(1, notif, type)
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && capturing ->
+                startForeground(1, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            else -> startForeground(1, notif)
+        }
     }
 
     private fun createOverlayUI() {
-        val mainSize = dpToPx(56)
-        val subSize = dpToPx(46)
-
         fun subButton(m: OutlineIconView.Mode) = OutlineIconView(this, m).apply {
             visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(subSize, subSize).apply { topMargin = dpToPx(8) }
+            layoutParams = LinearLayout.LayoutParams(subSize, subSize)
             applyTheme(isDarkTheme)
+            setGlyphTint(TEAL)
         }
 
-        // ✅ Back to the + / ✕ system, drawn as themed outline glyphs
         mainButton = OutlineIconView(this, OutlineIconView.Mode.PLUS).apply {
             layoutParams = LinearLayout.LayoutParams(mainSize, mainSize)
             applyTheme(isDarkTheme)
-            setAccent(PURPLE)   // ✅ purple when closed
+            setGlyphTint(PURPLE)
         }
 
         photoBtn = subButton(OutlineIconView.Mode.PHOTO)
         videoBtn = subButton(OutlineIconView.Mode.VIDEO)
 
-        resultText = TextView(this).apply {
-            text = ""; textSize = 13f; setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER; setTextColor(Color.WHITE); visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(subSize, subSize).apply { topMargin = dpToPx(8) }
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.GRAY) }
-            setOnClickListener {
-                it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                if (isRecording) stopRecording() else { resultText.visibility = View.GONE; relayout() }
+        // ✅ Result pill: percentage text, colored by the result. It expands
+        // beneath the ACTUAL camera/video button that was tapped.
+        resultLabel = TextView(this).apply {
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+        }
+        resultChip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setPadding(dpToPx(14), dpToPx(10), dpToPx(14), dpToPx(10))
+            background = GradientDrawable().apply {
+                cornerRadius = dpToPx(24).toFloat()
+                setColor(Color.GRAY)
             }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, subSize)
+            addView(resultLabel)
         }
 
-        overlayView = LinearLayout(this).apply {
+        stackView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
-            background = null
+        }
+        applyChildOrder()
+
+        // Fixed-size frame; the stack floats to its top or bottom
+        rootView = FrameLayout(this).apply {
+            clipChildren = false
+            addView(stackView, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            ))
         }
 
-        relayout()   // adds children in the right order
-
         overlayParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT, frameHeight,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.END; x = dpToPx(16); y = dpToPx(60) }
+        ).apply { gravity = Gravity.TOP or Gravity.END; x = edgePadding; y = dpToPx(80) }
 
+        refreshPanel()
         makeDraggable()
 
-        photoBtn.setOnClickListener {
-            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-            collapseMenu()
-            requestProjection(mode = "photo")
-        }
-        videoBtn.setOnClickListener {
-            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-            collapseMenu()
-            requestProjection(mode = "video")
-        }
-
-        windowManager.addView(overlayView, overlayParams)
+        windowManager.addView(rootView, overlayParams)
     }
 
-    // ---------------------------------------------------------------------
-    // Layout engine: one function decides order + window lift from state
-    // ---------------------------------------------------------------------
-
-    private fun relayout() {
-        val resultVisible = resultText.visibility == View.VISIBLE
-        val menuVisible = isExpanded
-
-        // Desired lift (in steps) when the stack grows upward
-        val desiredLift = if (!upward) 0 else
-            (if (menuVisible) 2 else 0) + (if (resultVisible) 1 else 0)
-
-        photoBtn.visibility = if (menuVisible) View.VISIBLE else View.GONE
-        videoBtn.visibility = if (menuVisible) View.VISIBLE else View.GONE
-
-        overlayView.removeAllViews()
-        val subs = listOf(photoBtn, videoBtn, resultText)
-        if (upward) {
-            // furthest-from-main first: result, video, photo, MAIN
-            overlayView.addView(resultText)
-            overlayView.addView(videoBtn)
-            overlayView.addView(photoBtn)
-            overlayView.addView(mainButton)
+    /** Stack the children so growth happens away from the main button.
+     *  ✅ every gap is identical (camera↔video same as video↔result). */
+    private fun applyChildOrder() {
+        stackView.removeAllViews()
+        val subs = listOf(photoBtn, videoBtn, resultChip)
+        if (stackAtBottom) {
+            stackView.addView(resultChip)
+            stackView.addView(videoBtn)
+            stackView.addView(photoBtn)
+            stackView.addView(mainButton)
             subs.forEach {
-                (it.layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0; bottomMargin = dpToPx(8) }
+                (it.layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0; bottomMargin = gap }
             }
         } else {
-            overlayView.addView(mainButton)
-            overlayView.addView(photoBtn)
-            overlayView.addView(videoBtn)
-            overlayView.addView(resultText)
+            stackView.addView(mainButton)
+            stackView.addView(photoBtn)
+            stackView.addView(videoBtn)
+            stackView.addView(resultChip)
             subs.forEach {
-                (it.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dpToPx(8); bottomMargin = 0 }
+                (it.layoutParams as LinearLayout.LayoutParams).apply { topMargin = gap; bottomMargin = 0 }
             }
         }
-
-        // Shift the window so the main icon stays visually in place
-        if (::overlayParams.isInitialized) {
-            val delta = desiredLift - currentLift
-            if (delta != 0) {
-                overlayParams.y = (overlayParams.y - delta * stepHeight).coerceAtLeast(0)
-                try { windowManager.updateViewLayout(overlayView, overlayParams) } catch (_: Exception) {}
-            }
-        }
-        currentLift = desiredLift
-
-        if (!menuVisible && !resultVisible) upward = false
     }
+
+    /** Flip which end of the frame the stack hugs, keeping the button pinned.
+     *  Pure integer math in ONE coordinate space — no correction needed. */
+    private fun setDirectionUp(up: Boolean) {
+        if (up == stackAtBottom) return
+        val btnTop = buttonTopOnScreen()
+        stackAtBottom = up
+        (stackView.layoutParams as FrameLayout.LayoutParams).gravity =
+            (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
+        applyChildOrder()
+        overlayParams.y = clampWindowY(btnTop - if (up) frameHeight - mainSize else 0)
+        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+    }
+
+    private fun maybeRestoreDirection() {
+        if (stackAtBottom && !isExpanded && resultChip.visibility != View.VISIBLE) {
+            setDirectionUp(false)
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Expand / collapse — pure view animation inside the fixed frame
+    // ---------------------------------------------------------------------
 
     private fun expandMenu() {
         if (isExpanded) return
         isExpanded = true
-        // ✅ direction decided here: upward only in the bottom 20%
-        if (currentLift == 0) {
-            val centerY = overlayParams.y + overlayView.height / 2
-            upward = centerY > screenHeight * 0.8
+
+        if (!stackAtBottom) {
+            val centerY = buttonTopOnScreen() + mainSize / 2
+            if (centerY > screenHeight * 0.7) setDirectionUp(true)
         }
-        // ✅ theme can change while the service lives — refresh on every open
-        val dark = isDarkTheme
-        mainButton.applyTheme(dark)
-        photoBtn.applyTheme(dark)
-        videoBtn.applyTheme(dark)
-        mainButton.setAccent(TEAL)   // ✅ teal while expanded
+
+        refreshPanelAndTheme()
+
+        val slide = dpToPx(14).toFloat() * (if (stackAtBottom) 1f else -1f)
+        for (b in listOf(photoBtn, videoBtn)) {
+            b.visibility = View.VISIBLE
+            b.alpha = 0f
+            b.translationY = slide
+            b.animate().alpha(1f).translationY(0f)
+                .setDuration(170).setInterpolator(DecelerateInterpolator()).start()
+        }
+
         mainButton.setModeAndRedraw(OutlineIconView.Mode.CLOSE)
-        relayout()
+        mainButton.setGlyphTint(TEAL)
     }
 
     private fun collapseMenu() {
         if (!isExpanded) return
         isExpanded = false
+        val keep = if (resultChip.visibility == View.VISIBLE)
+            (if (lastMode == "video") videoBtn else photoBtn) else null
+        photoBtn.visibility = if (keep === photoBtn) View.VISIBLE else View.GONE
+        videoBtn.visibility = if (keep === videoBtn) View.VISIBLE else View.GONE
         mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
-        mainButton.setAccent(PURPLE)   // ✅ back to purple when closed
-        relayout()
+        mainButton.setGlyphTint(PURPLE)
+        refreshPanel()
+        maybeRestoreDirection()
     }
 
-    /**
-     * ✅ DRAG FIX: collapse WITHOUT touching the view tree. relayout() calls
-     * removeAllViews(), and removing the view currently being touched kills
-     * the active touch stream — that's what froze dragging and left the ✕ stuck.
-     * Here we only flip visibilities, which is safe mid-gesture.
-     */
-    private fun collapseForDrag() {
-        isExpanded = false
-        photoBtn.visibility = View.GONE
-        videoBtn.visibility = View.GONE
-        if (!isRecording) resultText.visibility = View.GONE
-        mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
-        mainButton.setAccent(PURPLE)
-
-        val newLift = if (upward && resultText.visibility == View.VISIBLE) 1 else 0
-        if (newLift != currentLift) {
-            overlayParams.y += (currentLift - newLift) * stepHeight
-            currentLift = newLift
-        }
-        if (resultText.visibility != View.VISIBLE) upward = false
+    private fun refreshPanelAndTheme() {
+        val dark = isDarkTheme
+        mainButton.applyTheme(dark)
+        photoBtn.applyTheme(dark)
+        videoBtn.applyTheme(dark)
+        photoBtn.setGlyphTint(TEAL)
+        videoBtn.setGlyphTint(TEAL)
+        refreshPanel()
     }
 
     // ---------------------------------------------------------------------
-    // Drag / tap
+    // Drag / throw / trash
     // ---------------------------------------------------------------------
 
-    private fun makeDraggable() {
+    private var xAnimator: ValueAnimator? = null
+
+    /** ✅ Attach move/throw handling to a view. A tap runs onTap; a drag moves
+     *  the whole overlay — applied to every element so the expanded stack can
+     *  be dragged from any part of it. */
+    private fun attachDrag(view: View, onTap: () -> Unit) {
         val slop = ViewConfiguration.get(this).scaledTouchSlop
         var startX = 0; var startY = 0
         var touchX = 0f; var touchY = 0f
         var dragging = false
+        var velocityTracker: VelocityTracker? = null
 
-        mainButton.setOnTouchListener { v, event ->
+        val showTrashRunnable = Runnable { if (dragging) showDeleteZone() }
+
+        view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    xAnimator?.cancel()
+                    velocityTracker?.recycle()
+                    velocityTracker = VelocityTracker.obtain().also { it.addMovement(event) }
                     startX = overlayParams.x; startY = overlayParams.y
                     touchX = event.rawX; touchY = event.rawY
                     dragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.addMovement(event)
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
                     if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
                         dragging = true
-                        collapseForDrag()   // ✅ never relayout() mid-gesture
-                        showDeleteZone()
+                        mainHandler.postDelayed(showTrashRunnable, 300)
                     }
                     if (dragging) {
                         overlayParams.x = (startX - dx).toInt().coerceAtLeast(0)
-                        overlayParams.y = (startY + dy).toInt().coerceAtLeast(0)
-                        try { windowManager.updateViewLayout(overlayView, overlayParams) } catch (_: Exception) {}
-                        setDeleteZoneHighlight(event.rawY > screenHeight - deleteZoneHeight)
+                        overlayParams.y = clampWindowY((startY + dy).toInt())
+                        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+                        setDeleteZoneHighlight(isNearTrash(event.rawX, event.rawY))
                     }
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    mainHandler.removeCallbacks(showTrashRunnable)
                     if (dragging) {
-                        val droppedInZone = event.rawY > screenHeight - deleteZoneHeight
+                        val nearTrash = isNearTrash(event.rawX, event.rawY)
                         hideDeleteZone()
-                        if (droppedInZone && event.actionMasked == MotionEvent.ACTION_UP) {
+                        if (nearTrash && event.actionMasked == MotionEvent.ACTION_UP) {
+                            velocityTracker?.recycle(); velocityTracker = null
                             stopSelf()
                             return@setOnTouchListener true
                         }
+                        var vx = 0f; var vy = 0f
+                        velocityTracker?.let {
+                            it.addMovement(event)
+                            it.computeCurrentVelocity(1000)
+                            vx = it.xVelocity
+                            vy = it.yVelocity
+                        }
+                        flingRelease(vx, vy, event.rawX)
                     } else if (event.actionMasked == MotionEvent.ACTION_UP) {
                         v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                        if (isExpanded) collapseMenu() else expandMenu()
+                        onTap()
                     }
+                    velocityTracker?.recycle(); velocityTracker = null
                     true
                 }
                 else -> false
@@ -309,52 +441,178 @@ class OverlayService : Service() {
         }
     }
 
+    private fun makeDraggable() {
+        attachDrag(mainButton) { if (isExpanded) collapseMenu() else expandMenu() }
+        attachDrag(photoBtn) { requestProjection(mode = "photo") }
+        attachDrag(videoBtn) { requestProjection(mode = "video") }
+        attachDrag(resultChip) { if (isRecording) stopRecording() else hideResultChip() }
+    }
+
+    /** YouTube-PiP style throw: velocity picks the edge, momentum carries y. */
+    private fun flingRelease(vx: Float, vy: Float, releaseRawX: Float) {
+        xAnimator?.cancel()
+        val minFling = 600f
+
+        val leftX = (screenWidth - rootView.width - edgePadding).coerceAtLeast(0)
+        val rightX = edgePadding
+        val targetX = when {
+            vx > minFling -> rightX
+            vx < -minFling -> leftX
+            releaseRawX >= screenWidth / 2f -> rightX
+            else -> leftX
+        }
+
+        val projected = (vy * 0.18f).toInt()
+        val targetY = clampWindowY(overlayParams.y + projected)
+
+        val startX = overlayParams.x
+        val startY = overlayParams.y
+        if (startX == targetX && startY == targetY) return
+
+        val speed = hypot(vx, vy)
+        val dur = (200 + (speed / 6000f) * 220).toLong().coerceIn(200L, 420L)
+
+        xAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = dur
+            interpolator = DecelerateInterpolator(1.6f)
+            addUpdateListener { a ->
+                val f = a.animatedValue as Float
+                overlayParams.x = (startX + (targetX - startX) * f).toInt()
+                overlayParams.y = (startY + (targetY - startY) * f).toInt()
+                try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+            }
+            start()
+        }
+    }
+
+    /** Close only when the visible stack (not the empty frame) nears the trash. */
+    private fun isNearTrash(rawX: Float, rawY: Float): Boolean {
+        if (deleteZoneView == null) return false
+        val trashCx = screenWidth / 2f
+        val trashCy = screenHeight - deleteBottomOffset - deleteWindowSize / 2f
+
+        val loc = IntArray(2)
+        stackView.getLocationOnScreen(loc)
+        val left = loc[0].toFloat()
+        val top = loc[1].toFloat()
+        val right = left + stackView.width
+        val bottom = top + stackView.height
+
+        val nx = trashCx.coerceIn(left, right)
+        val ny = trashCy.coerceIn(top, bottom)
+        val rectDist = hypot(trashCx - nx, trashCy - ny)
+        val fingerDist = hypot(rawX - trashCx, rawY - trashCy)
+
+        return minOf(rectDist, fingerDist) < deleteProximity
+    }
+
     private fun showDeleteZone() {
         if (deleteZoneView != null) return
 
-        // ✅ Themed circle with an ✕ at the bottom-center (replaces the red bar)
-        val icon = OutlineIconView(this, OutlineIconView.Mode.CLOSE).apply {
+        val icon = OutlineIconView(this, OutlineIconView.Mode.TRASH).apply {
             applyTheme(isDarkTheme)
+            setGlyphTint(BRIGHT_RED)
+            layoutParams = FrameLayout.LayoutParams(deleteIconSize, deleteIconSize, Gravity.CENTER)
+        }
+        val container = FrameLayout(this).apply {
+            addView(icon)
             alpha = 0f
         }
 
-        val size = dpToPx(64)
         val params = WindowManager.LayoutParams(
-            size, size,
+            deleteWindowSize, deleteWindowSize,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = dpToPx(32)
+            y = deleteBottomOffset
         }
 
         try {
-            windowManager.addView(icon, params)
-            deleteZoneView = icon
-            icon.animate().alpha(1f).setDuration(180).start()
+            windowManager.addView(container, params)
+            deleteZoneView = container
+            deleteIcon = icon
+            container.animate().alpha(1f).setDuration(180).start()
         } catch (_: Exception) {}
     }
 
     private fun setDeleteZoneHighlight(active: Boolean) {
         if (active == deleteZoneHighlighted) return
         deleteZoneHighlighted = active
-        val icon = deleteZoneView ?: return
-        icon.setDanger(active)   // turns bright red with a white ✕ while hovering
+        val icon = deleteIcon ?: return
+        icon.setDanger(active)
         icon.animate()
-            .scaleX(if (active) 1.25f else 1f)
-            .scaleY(if (active) 1.25f else 1f)
-            .setDuration(120)
+            .scaleX(if (active) 1.35f else 1f)
+            .scaleY(if (active) 1.35f else 1f)
+            .setDuration(130)
             .start()
     }
 
     private fun hideDeleteZone() {
-        val icon = deleteZoneView ?: return
+        val zone = deleteZoneView ?: return
         deleteZoneView = null
+        deleteIcon = null
         deleteZoneHighlighted = false
-        icon.animate().alpha(0f).setDuration(180).withEndAction {
-            try { windowManager.removeView(icon) } catch (_: Exception) {}
+        zone.animate().alpha(0f).setDuration(180).withEndAction {
+            try { windowManager.removeView(zone) } catch (_: Exception) {}
         }.start()
+    }
+
+    // ---------------------------------------------------------------------
+    // Result pill
+    // ---------------------------------------------------------------------
+
+    private fun showResultChip() {
+        mainHandler.post {
+            if (resultChip.visibility == View.VISIBLE) return@post
+            if (!stackAtBottom && !isExpanded) {
+                val centerY = buttonTopOnScreen() + mainSize / 2
+                if (centerY > screenHeight * 0.7) setDirectionUp(true)
+            }
+            // ✅ the result expands beneath the actual button that was tapped
+            if (!isExpanded) {
+                val srcBtn = if (lastMode == "video") videoBtn else photoBtn
+                photoBtn.visibility = if (srcBtn === photoBtn) View.VISIBLE else View.GONE
+                videoBtn.visibility = if (srcBtn === videoBtn) View.VISIBLE else View.GONE
+                srcBtn.alpha = 1f
+                srcBtn.translationY = 0f
+            }
+            resultChip.visibility = View.VISIBLE
+            refreshPanel()
+            resultChip.alpha = 0f
+            resultChip.translationY = dpToPx(10).toFloat() * (if (stackAtBottom) 1f else -1f)
+            resultChip.animate().alpha(1f).translationY(0f)
+                .setDuration(170).setInterpolator(DecelerateInterpolator()).start()
+        }
+    }
+
+    private fun hideResultChip() {
+        mainHandler.post {
+            if (resultChip.visibility != View.VISIBLE) return@post
+            resultChip.visibility = View.GONE
+            if (!isExpanded) {
+                photoBtn.visibility = View.GONE
+                videoBtn.visibility = View.GONE
+            }
+            refreshPanel()
+            maybeRestoreDirection()
+        }
+    }
+
+    private fun updateStatus(text: String) {
+        mainHandler.post {
+            resultLabel.text = text
+            val pct = text.replace("%", "").toIntOrNull() ?: 0
+            val color = when {
+                text == "..." || text == "SEND" -> Color.GRAY
+                !text.endsWith("%") -> Color.DKGRAY
+                pct < 30 -> Color.parseColor("#4CAF50")
+                pct < 70 -> Color.parseColor("#FF9800")
+                else -> BRIGHT_RED
+            }
+            (resultChip.background as GradientDrawable).setColor(color)
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -363,8 +621,8 @@ class OverlayService : Service() {
 
     private fun requestProjection(mode: String) {
         if (isProcessing || isRecording) return
-        resultText.visibility = View.GONE
-        relayout()
+        lastMode = mode
+        hideResultChip()
         startActivity(Intent(this, ScreenshotActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra("EXTRA_ACTION", "ACTION_SHOT")
@@ -378,7 +636,7 @@ class OverlayService : Service() {
 
     private fun performCapture(mp: MediaProjection) {
         isProcessing = true
-        overlayView.visibility = View.GONE
+        rootView.visibility = View.GONE
         updateStatus("...")
 
         mainHandler.postDelayed({
@@ -423,7 +681,7 @@ class OverlayService : Service() {
                     val isCropEnabled = prefs.getBoolean("use_crop", true)
 
                     mainHandler.post {
-                        overlayView.visibility = View.VISIBLE
+                        rootView.visibility = View.VISIBLE
 
                         val inputFile = File(cacheDir, "input.png")
                         var saved = false
@@ -456,7 +714,7 @@ class OverlayService : Service() {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ NEW: screen video recording → Sightengine video endpoint
+    // Screen video recording
     // ---------------------------------------------------------------------
 
     private val recordFile: File get() = File(cacheDir, "record.mp4")
@@ -467,14 +725,13 @@ class OverlayService : Service() {
             val elapsed = System.currentTimeMillis() - recordStartMs
             if (elapsed >= MAX_RECORD_MS) { stopRecording(); return }
             val s = (elapsed / 1000).toInt()
-            resultText.text = String.format("%d:%02d", s / 60, s % 60)
+            resultLabel.text = String.format("%d:%02d", s / 60, s % 60)
             mainHandler.postDelayed(this, 500)
         }
     }
 
     private fun startRecording(mp: MediaProjection) {
         val m = resources.displayMetrics
-        // Cap the long edge at 1280 to keep files small; encoder needs even sizes
         val scale = max(m.widthPixels, m.heightPixels) / 1280f
         val vw = if (scale > 1f) (m.widthPixels / scale).toInt() and 0xFFFE else m.widthPixels and 0xFFFE
         val vh = if (scale > 1f) (m.heightPixels / scale).toInt() and 0xFFFE else m.heightPixels and 0xFFFE
@@ -503,11 +760,9 @@ class OverlayService : Service() {
             isRecording = true
             recordStartMs = System.currentTimeMillis()
 
-            // Recording chip: red, shows timer, tap to stop
-            resultText.text = "0:00"
-            (resultText.background as GradientDrawable).setColor(BRIGHT_RED)
-            resultText.visibility = View.VISIBLE
-            relayout()
+            resultLabel.text = "0:00"
+            (resultChip.background as GradientDrawable).setColor(BRIGHT_RED)
+            showResultChip()
             mainHandler.postDelayed(timerRunnable, 500)
 
         } catch (e: Exception) {
@@ -526,7 +781,7 @@ class OverlayService : Service() {
         mainHandler.removeCallbacks(timerRunnable)
 
         var ok = true
-        try { mediaRecorder?.stop() } catch (e: Exception) { ok = false }   // throws if too short
+        try { mediaRecorder?.stop() } catch (e: Exception) { ok = false }
         releaseRecorder()
         stopMediaProjection()
         stopForegroundCompat()
@@ -566,7 +821,6 @@ class OverlayService : Service() {
                     if (!it.isSuccessful) { updateStatus("API ${it.code}"); return }
                     try {
                         val json = JSONObject(bodyStr)
-                        // Same fallback chain as DetectorFragment, plus a frames-array scan
                         var score = json.optJSONObject("summary")
                             ?.optJSONObject("genai")?.optDouble("ai_generated")
                             ?.takeIf { d -> !d.isNaN() }
@@ -587,7 +841,6 @@ class OverlayService : Service() {
                         val pct = (score * 100).toInt()
                         updateStatus("$pct%")
 
-                        // History entry with a frame thumbnail
                         try {
                             val retriever = MediaMetadataRetriever()
                             retriever.setDataSource(file.absolutePath)
@@ -606,44 +859,15 @@ class OverlayService : Service() {
     }
 
     // ---------------------------------------------------------------------
-    // Result chip + status
+    // Image detection + status
     // ---------------------------------------------------------------------
-
-    private fun showResultChip() {
-        mainHandler.post {
-            if (resultText.visibility == View.VISIBLE) return@post
-            if (currentLift == 0 && !isExpanded) {
-                val centerY = overlayParams.y + overlayView.height / 2
-                upward = centerY > screenHeight * 0.8
-            }
-            resultText.visibility = View.VISIBLE
-            relayout()
-            resultText.alpha = 0f
-            resultText.animate().alpha(1f).setDuration(150).start()
-        }
-    }
 
     private fun resetAfterCapture(status: String) {
         isProcessing = false
-        overlayView.visibility = View.VISIBLE
+        rootView.visibility = View.VISIBLE
         showResultChip()
         updateStatus(status)
         stopForegroundCompat()
-    }
-
-    private fun updateStatus(text: String) {
-        mainHandler.post {
-            resultText.text = text
-            val pct = text.replace("%", "").toIntOrNull() ?: 0
-            val color = when {
-                text == "..." || text == "SEND" -> Color.GRAY
-                !text.endsWith("%") -> Color.DKGRAY
-                pct < 30 -> Color.parseColor("#4CAF50")
-                pct < 70 -> Color.parseColor("#FF9800")
-                else -> BRIGHT_RED
-            }
-            (resultText.background as GradientDrawable).setColor(color)
-        }
     }
 
     private fun runAiDetection(bitmap: Bitmap) {
@@ -708,7 +932,7 @@ class OverlayService : Service() {
             }
             "CROP_CANCELLED", "CAPTURE_DENIED" -> {
                 isProcessing = false
-                mainHandler.post { resultText.visibility = View.GONE; relayout() }
+                hideResultChip()
                 return START_STICKY
             }
             "CROP_FAILED" -> {
@@ -728,13 +952,7 @@ class OverlayService : Service() {
         val mode = intent?.getStringExtra("MODE") ?: "photo"
 
         if (code == Activity.RESULT_OK && data != null) {
-            createNotificationChannel()
-            val notification = createNotification(recording = mode == "video")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-            } else {
-                startForeground(1, notification)
-            }
+            goForeground(capturing = true)
 
             val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection?.stop()
@@ -758,7 +976,13 @@ class OverlayService : Service() {
         return START_STICKY
     }
 
+    /** ✅ after a capture, fall back to the idle specialUse foreground
+     *  (keeps the "overlay is on" notification alive). */
     private fun stopForegroundCompat() {
+        goForeground(capturing = false)
+    }
+
+    private fun reallyStopForeground() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -787,11 +1011,17 @@ class OverlayService : Service() {
         val stopIntent = Intent(this, OverlayService::class.java).apply { action = ACTION_STOP_SERVICE }
         val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE)
 
+        val openIntent = PendingIntent.getActivity(this, 1,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE)
+
         return NotificationCompat.Builder(this, "overlay_ch")
-            .setContentTitle(if (recording) "overlAI Recording…" else "overlAI Active")
+            .setContentTitle(if (recording) "overlAI — recording screen…" else "overlAI overlay is on")
+            .setContentText(if (recording) "Tap the timer chip to stop" else "Tap to open the app")
+            .setContentIntent(openIntent)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setOngoing(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Turn off", stopPendingIntent)
             .build()
     }
 
@@ -804,8 +1034,12 @@ class OverlayService : Service() {
         }
         stopMediaProjection()
         hideDeleteZone()
-        try { stopForegroundCompat() } catch (_: Exception) {}
-        try { windowManager.removeView(overlayView) } catch (_: Exception) {}
+        xAnimator?.cancel()
+        try { reallyStopForeground() } catch (_: Exception) {}
+        try { windowManager.removeView(rootView) } catch (_: Exception) {}
+        isRunning = false
+        OverlayTileService.refresh(this)
+        OverlayWidgetProvider.updateAll(this)
         super.onDestroy()
     }
 

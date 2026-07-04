@@ -79,6 +79,22 @@ object HistoryManager {
         return out
     }
 
+    /** ✅ Delete one entry (matched by timestamp) and its thumbnail. */
+    fun remove(context: Context, timestamp: Long) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val arr = JSONArray(prefs.getString(KEY, "[]"))
+        val out = JSONArray()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            if (o.optLong("ts") == timestamp) {
+                if (!o.isNull("thumb")) runCatching { File(o.optString("thumb")).delete() }
+            } else {
+                out.put(o)
+            }
+        }
+        prefs.edit().putString(KEY, out.toString()).apply()
+    }
+
     fun clear(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().remove(KEY).apply()

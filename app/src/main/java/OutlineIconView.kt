@@ -5,18 +5,25 @@ import android.graphics.*
 import android.view.View
 
 /**
- * Circular themed button with a stroke-drawn glyph — no emoji, no assets.
+ * Themed button with a stroke-drawn glyph — no emoji, no assets.
  * Modes: PLUS (+), CLOSE (✕), PHOTO (outline camera), VIDEO (outline camcorder).
- *  - applyTheme(dark): dark/light styling
- *  - setAccent(color): tint the glyph + ring with the app's accent color
- *  - setDanger(true): bright red fill + white glyph (used by the delete target)
+ * Shapes: CIRCLE or ROUNDED_SQUARE.
+ *  - applyTheme(dark): dark/light neutral styling
+ *  - setFill(color): solid colored background with a white glyph (purple/teal states)
+ *  - setDanger(true): bright red fill + white glyph (delete target hover)
  */
-class OutlineIconView(context: Context, var mode: Mode) : View(context) {
+class OutlineIconView(
+    context: Context,
+    var mode: Mode,
+    private val shapeStyle: Shape = Shape.CIRCLE
+) : View(context) {
 
-    enum class Mode { PLUS, CLOSE, PHOTO, VIDEO }
+    enum class Mode { PLUS, CLOSE, PHOTO, VIDEO, TRASH }
+    enum class Shape { CIRCLE, ROUNDED_SQUARE }
 
     private var dark = true
-    private var accent: Int? = null
+    private var fill: Int? = null
+    private var glyphTint: Int? = null
     private var danger = false
 
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -36,9 +43,16 @@ class OutlineIconView(context: Context, var mode: Mode) : View(context) {
         invalidate()
     }
 
-    /** Tints the glyph and ring with the app accent color (null = neutral). */
-    fun setAccent(color: Int?) {
-        accent = color
+    /** Solid colored background (e.g. purple closed / teal open). null = neutral theme look. */
+    fun setFill(color: Int?) {
+        fill = color
+        refreshColors()
+        invalidate()
+    }
+
+    /** Neutral themed background, colored glyph (e.g. purple + / teal ✕). */
+    fun setGlyphTint(color: Int?) {
+        glyphTint = color
         refreshColors()
         invalidate()
     }
@@ -57,29 +71,39 @@ class OutlineIconView(context: Context, var mode: Mode) : View(context) {
     }
 
     private fun refreshColors() {
-        if (danger) {
-            bgPaint.color = Color.parseColor("#FF1744")
-            ringPaint.color = Color.parseColor("#66FFFFFF")
-            glyphPaint.color = Color.WHITE
-            fillPaint.color = Color.WHITE
-            return
+        when {
+            danger -> {
+                bgPaint.color = Color.parseColor("#FF1744")
+                ringPaint.color = Color.parseColor("#66FFFFFF")
+                glyphPaint.color = Color.WHITE
+                fillPaint.color = Color.WHITE
+            }
+            fill != null -> {
+                bgPaint.color = fill!!
+                ringPaint.color = Color.parseColor("#40FFFFFF")
+                glyphPaint.color = Color.WHITE
+                fillPaint.color = Color.WHITE
+            }
+            dark -> {
+                bgPaint.color = Color.parseColor("#1C1C1E")
+                ringPaint.color = Color.parseColor("#40FFFFFF")
+                glyphPaint.color = Color.WHITE
+                fillPaint.color = Color.WHITE
+            }
+            else -> {
+                bgPaint.color = Color.parseColor("#F5F5F5")
+                ringPaint.color = Color.parseColor("#22000000")
+                glyphPaint.color = Color.parseColor("#111111")
+                fillPaint.color = Color.parseColor("#111111")
+            }
         }
-        if (dark) {
-            bgPaint.color = Color.parseColor("#1C1C1E")
-            ringPaint.color = Color.parseColor("#40FFFFFF")
-            glyphPaint.color = Color.WHITE
-            fillPaint.color = Color.WHITE
-        } else {
-            bgPaint.color = Color.parseColor("#F5F5F5")
-            ringPaint.color = Color.parseColor("#22000000")
-            glyphPaint.color = Color.parseColor("#111111")
-            fillPaint.color = Color.parseColor("#111111")
-        }
-        accent?.let { a ->
-            glyphPaint.color = a
-            fillPaint.color = a
-            // Ring picks up a translucent version of the accent
-            ringPaint.color = Color.argb(90, Color.red(a), Color.green(a), Color.blue(a))
+        // Colored glyph on the neutral themed background
+        if (!danger && fill == null) {
+            glyphTint?.let { c ->
+                glyphPaint.color = c
+                fillPaint.color = c
+                ringPaint.color = Color.argb(80, Color.red(c), Color.green(c), Color.blue(c))
+            }
         }
     }
 
@@ -94,9 +118,16 @@ class OutlineIconView(context: Context, var mode: Mode) : View(context) {
         ringPaint.strokeWidth = 1.2f * s
         glyphPaint.strokeWidth = 2.8f * s
 
-        val r = minOf(w, h) / 2f - ringPaint.strokeWidth
-        canvas.drawCircle(cx, cy, r, bgPaint)
-        canvas.drawCircle(cx, cy, r, ringPaint)
+        val inset = ringPaint.strokeWidth
+        if (shapeStyle == Shape.ROUNDED_SQUARE) {
+            val rad = minOf(w, h) * 0.3f
+            canvas.drawRoundRect(inset, inset, w - inset, h - inset, rad, rad, bgPaint)
+            canvas.drawRoundRect(inset, inset, w - inset, h - inset, rad, rad, ringPaint)
+        } else {
+            val r = minOf(w, h) / 2f - inset
+            canvas.drawCircle(cx, cy, r, bgPaint)
+            canvas.drawCircle(cx, cy, r, ringPaint)
+        }
 
         when (mode) {
             Mode.PLUS -> {
@@ -140,6 +171,22 @@ class OutlineIconView(context: Context, var mode: Mode) : View(context) {
                 canvas.drawPath(lens, glyphPaint)
 
                 canvas.drawCircle(bl + 6f * s, bt + 5f * s, 1.6f * s, fillPaint)
+            }
+            Mode.TRASH -> {
+                // Outline trash can: handle, lid, tapered body, two inner lines
+                canvas.drawLine(cx - 3.5f * s, cy - 11f * s, cx + 3.5f * s, cy - 11f * s, glyphPaint)   // handle
+                canvas.drawLine(cx - 10f * s, cy - 8f * s, cx + 10f * s, cy - 8f * s, glyphPaint)       // lid
+
+                val body = Path().apply {
+                    moveTo(cx - 8f * s, cy - 8f * s)
+                    lineTo(cx - 6.5f * s, cy + 11f * s)
+                    lineTo(cx + 6.5f * s, cy + 11f * s)
+                    lineTo(cx + 8f * s, cy - 8f * s)
+                }
+                canvas.drawPath(body, glyphPaint)
+
+                canvas.drawLine(cx - 2.8f * s, cy - 4f * s, cx - 2.4f * s, cy + 7f * s, glyphPaint)
+                canvas.drawLine(cx + 2.8f * s, cy - 4f * s, cx + 2.4f * s, cy + 7f * s, glyphPaint)
             }
         }
     }
