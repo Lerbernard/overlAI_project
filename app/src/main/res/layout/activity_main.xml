@@ -32,10 +32,11 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="History" />
+        <!-- ✅ Settings is now an icon-only gear tab -->
         <com.google.android.material.tabs.TabItem
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Settings" />
+            android:icon="@drawable/ic_settings" />
     </com.google.android.material.tabs.TabLayout>
 
     <FrameLayout

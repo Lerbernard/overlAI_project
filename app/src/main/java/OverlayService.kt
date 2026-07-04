@@ -36,7 +36,7 @@ import kotlin.math.max
  * Photo → screenshot → (optional crop) → AI score in a result chip.
  * Record → screen recording (auto-stops at 30s), timer chip, tap chip to stop,
  *          then the video is sent to the Sightengine video endpoint.
- * Drag the icon → full-width red delete zone at the bottom.
+ * Drag the icon → themed ✕ circle appears bottom-center; drop on it to close.
  * Menu opens upward when the icon sits in the bottom 20% of the screen.
  */
 class OverlayService : Service() {
@@ -49,7 +49,7 @@ class OverlayService : Service() {
     private lateinit var resultText: TextView   // doubles as recording timer chip
     private lateinit var overlayParams: WindowManager.LayoutParams
 
-    private var deleteZoneView: FrameLayout? = null
+    private var deleteZoneView: OutlineIconView? = null
     private var deleteZoneHighlighted = false
 
     private var mediaProjection: MediaProjection? = null
@@ -108,6 +108,7 @@ class OverlayService : Service() {
         mainButton = OutlineIconView(this, OutlineIconView.Mode.PLUS).apply {
             layoutParams = LinearLayout.LayoutParams(mainSize, mainSize)
             applyTheme(isDarkTheme)
+            setAccent(ThemeHelper.primary(this@OverlayService))   // ✅ app accent color
         }
 
         photoBtn = subButton(OutlineIconView.Mode.PHOTO)
@@ -218,6 +219,7 @@ class OverlayService : Service() {
         mainButton.applyTheme(dark)
         photoBtn.applyTheme(dark)
         videoBtn.applyTheme(dark)
+        mainButton.setAccent(ThemeHelper.primary(this))   // ✅ accent follows the theme
         mainButton.setModeAndRedraw(OutlineIconView.Mode.CLOSE)
         relayout()
     }
@@ -285,44 +287,49 @@ class OverlayService : Service() {
 
     private fun showDeleteZone() {
         if (deleteZoneView != null) return
-        val zone = FrameLayout(this).apply {
-            background = deleteZoneGradient(highlight = false)
+
+        // ✅ Themed circle with an ✕ at the bottom-center (replaces the red bar)
+        val icon = OutlineIconView(this, OutlineIconView.Mode.CLOSE).apply {
+            applyTheme(isDarkTheme)
             alpha = 0f
         }
+
+        val size = dpToPx(64)
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT, deleteZoneHeight,
+            size, size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.BOTTOM }
-        try {
-            windowManager.addView(zone, params)
-            deleteZoneView = zone
-            zone.animate().alpha(1f).setDuration(180).start()
-        } catch (_: Exception) {}
-    }
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = dpToPx(32)
+        }
 
-    private fun deleteZoneGradient(highlight: Boolean): GradientDrawable {
-        val colors = if (highlight) intArrayOf(
-            Color.parseColor("#66FF1744"), Color.parseColor("#E6FF1744"), BRIGHT_RED
-        ) else intArrayOf(
-            Color.TRANSPARENT, Color.parseColor("#99FF1744"), Color.parseColor("#E6FF1744")
-        )
-        return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors)
+        try {
+            windowManager.addView(icon, params)
+            deleteZoneView = icon
+            icon.animate().alpha(1f).setDuration(180).start()
+        } catch (_: Exception) {}
     }
 
     private fun setDeleteZoneHighlight(active: Boolean) {
         if (active == deleteZoneHighlighted) return
         deleteZoneHighlighted = active
-        deleteZoneView?.background = deleteZoneGradient(active)
+        val icon = deleteZoneView ?: return
+        icon.setDanger(active)   // turns bright red with a white ✕ while hovering
+        icon.animate()
+            .scaleX(if (active) 1.25f else 1f)
+            .scaleY(if (active) 1.25f else 1f)
+            .setDuration(120)
+            .start()
     }
 
     private fun hideDeleteZone() {
-        val zone = deleteZoneView ?: return
+        val icon = deleteZoneView ?: return
         deleteZoneView = null
         deleteZoneHighlighted = false
-        zone.animate().alpha(0f).setDuration(180).withEndAction {
-            try { windowManager.removeView(zone) } catch (_: Exception) {}
+        icon.animate().alpha(0f).setDuration(180).withEndAction {
+            try { windowManager.removeView(icon) } catch (_: Exception) {}
         }.start()
     }
 

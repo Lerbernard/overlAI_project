@@ -251,6 +251,16 @@ class MainActivity : AppCompatActivity() {
 
         t.applyTabTheme(this, findViewById(R.id.tabLayout))
 
+        // ✅ Tint the gear icon: accent when selected, secondary text color otherwise
+        val tabs = findViewById<TabLayout>(R.id.tabLayout)
+        tabs.tabIconTint = android.content.res.ColorStateList(
+            arrayOf(
+                intArrayOf(android.R.attr.state_selected),
+                intArrayOf()
+            ),
+            intArrayOf(t.primary(this), t.textSecondary(this))
+        )
+
         t.applyButtonTheme(
             this,
             findViewById(R.id.btnStart),
