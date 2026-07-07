@@ -21,7 +21,13 @@ class OverlayTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
+        liveInstance = this
         refreshTile()
+    }
+
+    override fun onStopListening() {
+        if (liveInstance === this) liveInstance = null
+        super.onStopListening()
     }
 
     override fun onClick() {
@@ -39,19 +45,32 @@ class OverlayTileService : TileService() {
                 startActivityAndCollapse(PendingIntent.getActivity(
                     this, 0, i, PendingIntent.FLAG_IMMUTABLE))
             } else {
-                @Suppress("DEPRECATION")
-                startActivityAndCollapse(i)
+                // ✅ no deprecated overload: just launch; the shade stays up
+                // on pre-14 devices and the user swipes it away
+                startActivity(i)
             }
             return
         }
-        // Service state flips asynchronously; refresh shortly after
-        android.os.Handler(mainLooper).postDelayed({ refreshTile() }, 300)
+        // ✅ instant feedback: show the target state immediately…
+        val target = !OverlayService.isRunning
+        qsTile?.apply {
+            state = if (target) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                subtitle = if (target) "On" else "Off"
+            }
+            updateTile()
+        }
+        // …then confirm against the real service state a moment later
+        android.os.Handler(mainLooper).postDelayed({ refreshTile() }, 350)
     }
 
-    private fun refreshTile() {
+    fun refreshTile() {
         qsTile?.apply {
             state = if (OverlayService.isRunning) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-            label = "overlAI"
+            // ✅ set the brand icon explicitly so it always matches
+            icon = android.graphics.drawable.Icon.createWithResource(
+                this@OverlayTileService, R.drawable.ic_tile)
+            label = "OverlAI"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 subtitle = if (OverlayService.isRunning) "On" else "Off"
             }
@@ -60,8 +79,19 @@ class OverlayTileService : TileService() {
     }
 
     companion object {
-        /** Ask the system to re-query the tile (call when service state changes). */
+        /** ✅ live handle while the shade is open — lets state changes from the
+         *  app/widget/trash update the tile INSTANTLY instead of waiting for
+         *  the system to re-query it. */
+        @Volatile private var liveInstance: OverlayTileService? = null
+
         fun refresh(context: Context) {
+            // direct poke first (instant when the shade is visible)…
+            try {
+                liveInstance?.let {
+                    android.os.Handler(context.mainLooper).post { it.refreshTile() }
+                }
+            } catch (_: Exception) {}
+            // …and the official path as fallback
             try {
                 requestListeningState(context,
                     ComponentName(context, OverlayTileService::class.java))
@@ -111,7 +141,7 @@ class OverlayWidgetProvider : AppWidgetProvider() {
                 if (on) R.drawable.widget_dot_on else R.drawable.widget_dot_off)
             views.setTextViewText(R.id.widget_status, if (on) "Overlay on" else "Overlay off")
             views.setTextColor(R.id.widget_status,
-                if (on) Color.parseColor("#03DAC5") else Color.parseColor("#999999"))
+                if (on) ContextCompat.getColor(context, R.color.dm_accent) else ContextCompat.getColor(context, R.color.widget_text_dim))
 
             // ✅ Proton-style: Activate (purple) / Deactivate (gray)
             views.setTextViewText(R.id.widget_action, if (on) "Deactivate" else "Activate")
@@ -185,7 +215,7 @@ class OverlayStatsWidget : AppWidgetProvider() {
                 if (on) R.drawable.widget_dot_on else R.drawable.widget_dot_off)
             v.setTextViewText(R.id.stats_status, if (on) "Overlay on" else "Overlay off")
             v.setTextColor(R.id.stats_status,
-                if (on) Color.parseColor("#03DAC5") else Color.parseColor("#999999"))
+                if (on) ContextCompat.getColor(context, R.color.dm_accent) else ContextCompat.getColor(context, R.color.widget_text_dim))
 
             val (img, vid) = UsageTracker.counts(context)
             v.setTextViewText(R.id.stats_checks, "${img + vid}")
@@ -193,13 +223,13 @@ class OverlayStatsWidget : AppWidgetProvider() {
             val last = HistoryManager.getAll(context).firstOrNull()
             if (last == null) {
                 v.setTextViewText(R.id.stats_score, "—")
-                v.setTextColor(R.id.stats_score, Color.parseColor("#999999"))
+                v.setTextColor(R.id.stats_score, ContextCompat.getColor(context, R.color.widget_text_dim))
                 v.setTextViewText(R.id.stats_when, "No checks yet")
             } else {
                 val c = when {
-                    last.score < 30 -> Color.parseColor("#4CAF50")
-                    last.score < 70 -> Color.parseColor("#FF9800")
-                    else -> Color.parseColor("#FF1744")
+                    last.score < 30 -> ContextCompat.getColor(context, R.color.dm_score_low)
+                    last.score < 70 -> ContextCompat.getColor(context, R.color.dm_score_mid)
+                    else -> ContextCompat.getColor(context, R.color.dm_score_high)
                 }
                 v.setTextViewText(R.id.stats_score, "${last.score}%")
                 v.setTextColor(R.id.stats_score, c)

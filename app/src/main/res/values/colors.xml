@@ -5,14 +5,31 @@
 
     <!-- Light mode -->
     <color name="lm_primary">#7C3AED</color>
-    <color name="lm_accent">#00BCD4</color>
+    <color name="lm_accent">#03DAC5</color>
     <color name="lm_background">#FFFFFF</color>
     <color name="lm_surface">#FFFFFF</color>
     <color name="lm_card">#EDE0FF</color>
     <color name="lm_text_primary">#1A0533</color>
     <color name="lm_text_secondary">#6B5B8C</color>
     <color name="lm_tab_text">#7C3AED</color>
-    <color name="lm_tab_indicator">#00BCD4</color>
+    <color name="lm_tab_indicator">#03DAC5</color>
     <color name="lm_btn_secondary">#EDE0FF</color>
-    <color name="lm_btn_secondary_text">#00BCD4</color>
+    <color name="lm_btn_secondary_text">#03DAC5</color>
+
+    <!-- ✅ semantic colors (light) -->
+    <color name="lm_score_low">#4CAF50</color>
+    <color name="lm_score_mid">#FF9800</color>
+    <color name="lm_score_high">#FF1744</color>
+    <color name="lm_idle_gray">#888888</color>
+    <color name="lm_btn_neutral">#3A3A3E</color>
+    <color name="lm_divider">#22888888</color>
+    <color name="lm_overlay_btn">#F5F5F5</color>
+    <color name="lm_overlay_glyph">#111111</color>
+    <color name="lm_overlay_panel">#80FFFFFF</color>
+    <color name="lm_scrim">#CC000000</color>
+
+    <!-- ✅ widgets (always dark-styled) -->
+    <color name="widget_card">#E61A1A1C</color>
+    <color name="widget_text_dim">#999999</color>
+    <color name="widget_glow">#6603DAC5</color>
 </resources>

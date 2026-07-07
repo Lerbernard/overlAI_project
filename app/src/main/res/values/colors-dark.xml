@@ -2,14 +2,26 @@
 <resources>
     <!-- Dark mode -->
     <color name="dm_primary">#7C3AED</color>
-    <color name="dm_accent">#00BCD4</color>
+    <color name="dm_accent">#03DAC5</color>
     <color name="dm_background">#000000</color>
     <color name="dm_surface">#111118</color>
     <color name="dm_card">#1A1A2A</color>
     <color name="dm_text_primary">#F1F5F9</color>
     <color name="dm_text_secondary">#94A3B8</color>
     <color name="dm_tab_text">#7C3AED</color>
-    <color name="dm_tab_indicator">#00BCD4</color>
+    <color name="dm_tab_indicator">#03DAC5</color>
     <color name="dm_btn_secondary">#1A1A2A</color>
-    <color name="dm_btn_secondary_text">#00BCD4</color>
+    <color name="dm_btn_secondary_text">#03DAC5</color>
+
+    <!-- ✅ semantic colors (dark) -->
+    <color name="dm_score_low">#4CAF50</color>
+    <color name="dm_score_mid">#FF9800</color>
+    <color name="dm_score_high">#FF1744</color>
+    <color name="dm_idle_gray">#8E8E93</color>
+    <color name="dm_btn_neutral">#3A3A3E</color>
+    <color name="dm_divider">#22888888</color>
+    <color name="dm_overlay_btn">#1C1C1E</color>
+    <color name="dm_overlay_glyph">#FFFFFF</color>
+    <color name="dm_overlay_panel">#661A1A1C</color>
+    <color name="dm_scrim">#CC000000</color>
 </resources>

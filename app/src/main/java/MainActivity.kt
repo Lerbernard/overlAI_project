@@ -23,7 +23,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
-import com.google.android.material.tabs.TabLayout
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,7 +44,6 @@ class MainActivity : AppCompatActivity() {
 
         applyTheme()
 
-        val tabLayout      = findViewById<TabLayout>(R.id.tabLayout)
         val viewOverlay    = findViewById<LinearLayout>(R.id.viewOverlay)
         val viewDetector   = findViewById<FrameLayout>(R.id.viewDetector)
         val viewHistory    = findViewById<LinearLayout>(R.id.viewHistory)
@@ -53,64 +51,14 @@ class MainActivity : AppCompatActivity() {
         val cropSwitch     = findViewById<SwitchMaterial>(R.id.crop_switch)
         val darkModeSwitch = findViewById<SwitchMaterial>(R.id.dark_mode_switch)
 
-        // ✅ Gear tab hugs its icon; text tabs share the remaining width
-        tabLayout.post {
-            val strip = tabLayout.getChildAt(0) as LinearLayout
-            for (i in 0 until strip.childCount) {
-                val tab = strip.getChildAt(i)
-                val p = tab.layoutParams as LinearLayout.LayoutParams
-                if (i == 3) {
-                    p.width = LinearLayout.LayoutParams.WRAP_CONTENT
-                    p.weight = 0f
-                    tab.minimumWidth = 0
-                    tab.scaleX = 0.85f
-                    tab.scaleY = 0.85f
-                } else {
-                    p.width = 0
-                    p.weight = 1f
-                }
-                tab.layoutParams = p
-            }
-            strip.requestLayout()
-        }
-
         val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
         cropSwitch.isChecked     = prefs.getBoolean("use_crop", true)
         darkModeSwitch.isChecked = ThemeHelper.isDark(this)
 
-        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab?) {
-                viewOverlay.visibility  = View.GONE
-                viewDetector.visibility = View.GONE
-                viewHistory.visibility  = View.GONE
-                viewSettings.visibility = View.GONE
-                when (tab?.position) {
-                    0 -> viewOverlay.visibility = View.VISIBLE
-                    1 -> {
-                        viewDetector.visibility = View.VISIBLE
-                        if (supportFragmentManager.findFragmentById(R.id.viewDetector) == null) {
-                            supportFragmentManager.beginTransaction()
-                                .replace(R.id.viewDetector, DetectorFragment())
-                                .commit()
-                        }
-                    }
-                    2 -> {
-                        viewHistory.visibility = View.VISIBLE
-                        refreshHistory()   // ✅ reload every time the tab opens
-                    }
-                    3 -> viewSettings.visibility = View.VISIBLE
-                }
-            }
-            override fun onTabUnselected(tab: TabLayout.Tab?) {}
-            override fun onTabReselected(tab: TabLayout.Tab?) {}
-        })
-
-        // ✅ After a dark-mode recreate(), jump back to the tab the user was on
-        val restoreTab = prefs.getInt("restore_tab", 0)
-        if (restoreTab != 0) {
-            tabLayout.getTabAt(restoreTab)?.select()
-            prefs.edit().remove("restore_tab").apply()
-        }
+        // ✅ bottom navigation, Proton-style: icon pill + label
+        buildBottomNav()
+        selectTab(prefs.getInt("restore_tab", 0))
+        prefs.edit().remove("restore_tab").apply()
 
         cropSwitch.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean("use_crop", isChecked).apply()
@@ -119,7 +67,7 @@ class MainActivity : AppCompatActivity() {
         darkModeSwitch.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit()
                 .putBoolean("dark_mode", isChecked)
-                .putInt("restore_tab", tabLayout.selectedTabPosition)
+                .putInt("restore_tab", currentTab)
                 .apply()
             recreate()
         }
@@ -207,7 +155,7 @@ class MainActivity : AppCompatActivity() {
                 clipToOutline = true
                 background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
-                    setColor(Color.parseColor("#22888888"))
+                    setColor(ThemeHelper.divider(this@MainActivity))
                 }
                 val bmp: Bitmap? = e.thumbPath?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
                 if (bmp != null) setImageBitmap(bmp)
@@ -235,7 +183,7 @@ class MainActivity : AppCompatActivity() {
             val scoreColor = when {
                 e.score < 30 -> Color.parseColor("#4CAF50")
                 e.score < 70 -> Color.parseColor("#FF9800")
-                else -> Color.parseColor("#FF1744")
+                else -> ThemeHelper.scoreHigh(this@MainActivity)
             }
             row.addView(TextView(this).apply {
                 text = "${e.score}%"
@@ -254,7 +202,7 @@ class MainActivity : AppCompatActivity() {
             row.addView(OutlineIconView(this, OutlineIconView.Mode.TRASH).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginStart = dp(10) }
                 applyTheme(ThemeHelper.isDark(this@MainActivity))
-                setGlyphTint(Color.parseColor("#FF1744"))
+                setGlyphTint(ThemeHelper.scoreHigh(this@MainActivity))
                 setOnClickListener {
                     HistoryManager.remove(this@MainActivity, e.timestamp)
                     refreshHistory()
@@ -299,7 +247,7 @@ class MainActivity : AppCompatActivity() {
         val scoreColor = when {
             e.score < 30 -> Color.parseColor("#4CAF50")
             e.score < 70 -> Color.parseColor("#FF9800")
-            else -> Color.parseColor("#FF1744")
+            else -> ThemeHelper.scoreHigh(this@MainActivity)
         }
         val verdict = when {
             e.score < 30 -> "Likely real"
@@ -334,7 +282,7 @@ class MainActivity : AppCompatActivity() {
             setColor(t.card(this@MainActivity))
         })
         dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(t.primary(this))
-        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Color.parseColor("#FF1744"))
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(ThemeHelper.scoreHigh(this@MainActivity))
     }
 
     /** Fullscreen picture viewer — tap anywhere to close. */
@@ -377,19 +325,139 @@ class MainActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.viewOverlay).setBackgroundColor(t.background(this))
         findViewById<LinearLayout>(R.id.viewHistory).setBackgroundColor(t.background(this))
         findViewById<TextView>(R.id.historyTitle).setTextColor(t.textPrimary(this))
+        findViewById<TextView>(R.id.pageTitleHistory)?.setTextColor(t.textPrimary(this))
+        findViewById<TextView>(R.id.pageTitleSettings)?.setTextColor(t.textPrimary(this))
         findViewById<TextView>(R.id.usage_title)?.setTextColor(t.textPrimary(this))
         findViewById<TextView>(R.id.usage_text)?.setTextColor(t.textSecondary(this))
         findViewById<TextView>(R.id.btnClearHistory).setTextColor(t.primary(this))
         val settingsLayout = findViewById<LinearLayout>(R.id.viewSettings)
         settingsLayout.setBackgroundColor(t.background(this))
 
-        t.applyTabTheme(this, findViewById(R.id.tabLayout))
-
-        // ✅ Gear matches the purple tab text in both states
-        val tabs = findViewById<TabLayout>(R.id.tabLayout)
-        tabs.tabIconTint = android.content.res.ColorStateList.valueOf(t.primary(this))
+        // ✅ bottom bar theming
+        findViewById<View>(R.id.navDivider).setBackgroundColor(ThemeHelper.divider(this@MainActivity))
+        findViewById<LinearLayout>(R.id.bottomNav).setBackgroundColor(t.background(this))
 
         t.applyCardTheme(settingsLayout, this)
+    }
+
+    // ------------------------------------------------------------------
+    // Bottom navigation (custom: icon pill + label, teal = selected)
+    // ------------------------------------------------------------------
+
+    private var currentTab = 0
+    private val navIcons = ArrayList<ImageView>()
+    private val navPills = ArrayList<FrameLayout>()
+    private val navLabels = ArrayList<TextView>()
+
+    private fun buildBottomNav() {
+        val bar = findViewById<LinearLayout>(R.id.bottomNav)
+        bar.removeAllViews()
+        navIcons.clear(); navPills.clear(); navLabels.clear()
+
+        val items = listOf(
+            Pair("OverlAI", R.drawable.ic_nav_logo),   // ✅ brand logo as the home icon
+            Pair("Detector", R.drawable.ic_nav_detector),
+            Pair("History", R.drawable.ic_nav_history),
+            Pair("Settings", R.drawable.ic_settings)
+        )
+
+        items.forEachIndexed { index, (label, iconRes) ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+                isClickable = true
+                setOnClickListener { selectTab(index) }
+            }
+
+            val pill = FrameLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(64), dp(32))
+            }
+            val icon = ImageView(this).apply {
+                setImageResource(iconRes)
+                layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
+            }
+            pill.addView(icon)
+
+            val text = TextView(this).apply {
+                this.text = label
+                textSize = 12f
+                maxLines = 1
+                includeFontPadding = false          // ✅ kills the phantom top gap
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(0, dp(5), 0, 0)
+            }
+
+            item.addView(pill)
+            item.addView(text)
+            bar.addView(item)
+
+            navPills.add(pill)
+            navIcons.add(icon)
+            navLabels.add(text)
+        }
+    }
+
+    private fun selectTab(index: Int) {
+        val previous = currentTab
+        currentTab = index
+
+        // ✅ leaving the Detector clears it back to its empty state
+        if (previous == 1 && index != 1) {
+            (supportFragmentManager.findFragmentById(R.id.viewDetector) as? DetectorFragment)
+                ?.resetPage()
+        }
+
+        findViewById<LinearLayout>(R.id.viewOverlay).visibility = if (index == 0) View.VISIBLE else View.GONE
+        findViewById<FrameLayout>(R.id.viewDetector).visibility = if (index == 1) View.VISIBLE else View.GONE
+        findViewById<LinearLayout>(R.id.viewHistory).visibility = if (index == 2) View.VISIBLE else View.GONE
+        findViewById<LinearLayout>(R.id.viewSettings).visibility = if (index == 3) View.VISIBLE else View.GONE
+
+        if (index == 1 && supportFragmentManager.findFragmentById(R.id.viewDetector) == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.viewDetector, DetectorFragment())
+                .commit()
+        }
+        if (index == 2) refreshHistory()
+
+        getSharedPreferences("app_settings", MODE_PRIVATE)
+            .edit().putInt("restore_tab", index).apply()
+
+        styleBottomNav()
+    }
+
+    private fun styleBottomNav() {
+        val t = ThemeHelper
+        val selected = t.tabIndicator(this)          // ✅ teal = selected, as before
+        val pillBg = Color.argb(46, Color.red(selected), Color.green(selected), Color.blue(selected))
+        val idle = t.textSecondary(this)
+
+        // ✅ light mode uses the dark-dot logo so the mark stays visible
+        navIcons.getOrNull(0)?.setImageResource(
+            if (ThemeHelper.isDark(this)) R.drawable.ic_nav_logo else R.drawable.ic_nav_logo_light)
+
+        for (i in navIcons.indices) {
+            val isSel = i == currentTab
+            if (i == 0) {
+                // ✅ brand colors only while Home is selected; grey otherwise
+                if (isSel) {
+                    navIcons[i].clearColorFilter()
+                } else {
+                    navIcons[i].setColorFilter(idle)
+                }
+                navIcons[i].alpha = 1f
+            } else {
+                navIcons[i].alpha = 1f
+                navIcons[i].setColorFilter(if (isSel) selected else idle)
+            }
+            navLabels[i].setTextColor(if (isSel) selected else idle)
+            navLabels[i].setTypeface(null,
+                if (isSel) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+            navPills[i].background = if (isSel) GradientDrawable().apply {
+                cornerRadius = dp(16).toFloat()
+                setColor(pillBg)
+            } else null
+        }
     }
 
     override fun onResume() {
@@ -398,77 +466,32 @@ class MainActivity : AppCompatActivity() {
         refreshDashboard()
     }
 
-    /** ✅ Overlay tab dashboard: state card + stats, mirrors the widget. */
+    /** ✅ Overlay tab: minimal centered hero — ring, state, button. */
     private fun refreshDashboard() {
         val t = ThemeHelper
         val on = OverlayService.isRunning
-        val teal = Color.parseColor("#03DAC5")
-
-        val card = findViewById<LinearLayout>(R.id.dashCard) ?: return
-        card.background = if (on) GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(Color.parseColor("#5903DAC5"), t.card(this), t.card(this))
-        ).apply { cornerRadius = dp(26).toFloat() }
-        else GradientDrawable().apply { cornerRadius = dp(26).toFloat(); setColor(t.card(this@MainActivity)) }
-
-        findViewById<View>(R.id.dashDot).background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(if (on) teal else Color.parseColor("#888888"))
+        // ✅ the logo IS the status light: full color when on, gray when off
+        findViewById<ImageView>(R.id.dashLogo)?.apply {
+            if (on) {
+                clearColorFilter()
+                alpha = 1f
+            } else {
+                val cm = android.graphics.ColorMatrix().apply { setSaturation(0f) }
+                colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+                alpha = 0.4f
+            }
         }
-        findViewById<TextView>(R.id.dashState).apply {
+
+        findViewById<TextView>(R.id.dashState)?.apply {
             text = if (on) "Overlay is on" else "Overlay is off"
             setTextColor(t.textPrimary(this@MainActivity))
         }
-        findViewById<TextView>(R.id.dashSub).apply {
-            text = if (on) "Tap the floating button to check anything on screen"
-            else "Activate to check content in any app"
-            setTextColor(t.textSecondary(this@MainActivity))
-        }
-        findViewById<MaterialButton>(R.id.btnToggleOverlay).apply {
+
+        findViewById<MaterialButton>(R.id.btnToggleOverlay)?.apply {
             text = if (on) "Deactivate" else "Activate"
             backgroundTintList = android.content.res.ColorStateList.valueOf(
-                if (on) Color.parseColor("#3A3A3E") else t.primary(this@MainActivity))
+                if (on) ThemeHelper.btnNeutral(this@MainActivity) else t.primary(this@MainActivity))
             setTextColor(Color.WHITE)
-        }
-
-        // stats row
-        val cardBg = { GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(t.card(this@MainActivity)) } }
-        findViewById<LinearLayout>(R.id.statCard1)?.background = cardBg()
-        findViewById<LinearLayout>(R.id.statCard2)?.background = cardBg()
-        findViewById<TextView>(R.id.statChecksLabel)?.setTextColor(t.textSecondary(this))
-        findViewById<TextView>(R.id.statLastLabel)?.setTextColor(t.textSecondary(this))
-
-        val (img, vid) = UsageTracker.counts(this)
-        findViewById<TextView>(R.id.statChecks)?.apply {
-            text = "${img + vid}"
-            setTextColor(t.textPrimary(this@MainActivity))
-        }
-
-        val last = HistoryManager.getAll(this).firstOrNull()
-        val scoreTv = findViewById<TextView>(R.id.statScore)
-        val whenTv = findViewById<TextView>(R.id.statWhen)
-        val thumbIv = findViewById<ImageView>(R.id.statThumb)
-        if (last == null) {
-            scoreTv?.text = "—"; scoreTv?.setTextColor(t.textSecondary(this))
-            whenTv?.text = "No checks yet"; whenTv?.setTextColor(t.textSecondary(this))
-            thumbIv?.setImageBitmap(null)
-        } else {
-            val c = when {
-                last.score < 30 -> Color.parseColor("#4CAF50")
-                last.score < 70 -> Color.parseColor("#FF9800")
-                else -> Color.parseColor("#FF1744")
-            }
-            scoreTv?.text = "${last.score}%"; scoreTv?.setTextColor(c)
-            whenTv?.text = android.text.format.DateUtils.getRelativeTimeSpanString(last.timestamp)
-            whenTv?.setTextColor(t.textSecondary(this))
-            thumbIv?.let { iv ->
-                iv.background = GradientDrawable().apply {
-                    cornerRadius = dp(8).toFloat(); setColor(Color.parseColor("#22888888"))
-                }
-                iv.clipToOutline = true
-                iv.setImageBitmap(last.thumbPath?.let { p ->
-                    runCatching { BitmapFactory.decodeFile(p) }.getOrNull() })
-            }
         }
     }
 

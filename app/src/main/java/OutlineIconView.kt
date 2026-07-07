@@ -6,11 +6,8 @@ import android.view.View
 
 /**
  * Themed button with a stroke-drawn glyph — no emoji, no assets.
- * Modes: PLUS (+), CLOSE (✕), PHOTO (outline camera), VIDEO (outline camcorder).
- * Shapes: CIRCLE or ROUNDED_SQUARE.
- *  - applyTheme(dark): dark/light neutral styling
- *  - setFill(color): solid colored background with a white glyph (purple/teal states)
- *  - setDanger(true): bright red fill + white glyph (delete target hover)
+ * ✅ Borderless: circles are pure fills, no ring stroke.
+ * ✅ Every color comes from colors.xml / colors-dark.xml via ThemeHelper.
  */
 class OutlineIconView(
     context: Context,
@@ -27,7 +24,6 @@ class OutlineIconView(
     private var danger = false
 
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
@@ -43,14 +39,14 @@ class OutlineIconView(
         invalidate()
     }
 
-    /** Solid colored background (e.g. purple closed / teal open). null = neutral theme look. */
+    /** Solid colored background with a white glyph. null = neutral theme look. */
     fun setFill(color: Int?) {
         fill = color
         refreshColors()
         invalidate()
     }
 
-    /** Neutral themed background, colored glyph (e.g. purple + / teal ✕). */
+    /** Neutral themed background, colored glyph. */
     fun setGlyphTint(color: Int?) {
         glyphTint = color
         refreshColors()
@@ -71,30 +67,25 @@ class OutlineIconView(
     }
 
     private fun refreshColors() {
+        val white = androidx.core.content.ContextCompat.getColor(context, R.color.white)
         when {
             danger -> {
-                bgPaint.color = Color.parseColor("#FF1744")
-                ringPaint.color = Color.parseColor("#66FFFFFF")
-                glyphPaint.color = Color.WHITE
-                fillPaint.color = Color.WHITE
+                bgPaint.color = ThemeHelper.scoreHigh(context)
+                glyphPaint.color = white
+                fillPaint.color = white
             }
             fill != null -> {
                 bgPaint.color = fill!!
-                ringPaint.color = Color.parseColor("#40FFFFFF")
-                glyphPaint.color = Color.WHITE
-                fillPaint.color = Color.WHITE
-            }
-            dark -> {
-                bgPaint.color = Color.parseColor("#1C1C1E")
-                ringPaint.color = Color.parseColor("#40FFFFFF")
-                glyphPaint.color = Color.WHITE
-                fillPaint.color = Color.WHITE
+                glyphPaint.color = white
+                fillPaint.color = white
             }
             else -> {
-                bgPaint.color = Color.parseColor("#F5F5F5")
-                ringPaint.color = Color.parseColor("#22000000")
-                glyphPaint.color = Color.parseColor("#111111")
-                fillPaint.color = Color.parseColor("#111111")
+                bgPaint.color = androidx.core.content.ContextCompat.getColor(context,
+                    if (dark) R.color.dm_overlay_btn else R.color.lm_overlay_btn)
+                val glyph = androidx.core.content.ContextCompat.getColor(context,
+                    if (dark) R.color.dm_overlay_glyph else R.color.lm_overlay_glyph)
+                glyphPaint.color = glyph
+                fillPaint.color = glyph
             }
         }
         // Colored glyph on the neutral themed background
@@ -102,7 +93,6 @@ class OutlineIconView(
             glyphTint?.let { c ->
                 glyphPaint.color = c
                 fillPaint.color = c
-                ringPaint.color = Color.argb(80, Color.red(c), Color.green(c), Color.blue(c))
             }
         }
     }
@@ -115,18 +105,15 @@ class OutlineIconView(
         val cy = h / 2f
         val s = minOf(w, h) / 56f          // scale relative to a 56dp design grid
 
-        ringPaint.strokeWidth = 1.2f * s
         glyphPaint.strokeWidth = 2.8f * s
 
-        val inset = ringPaint.strokeWidth
+        val inset = 1f * s
         if (shapeStyle == Shape.ROUNDED_SQUARE) {
             val rad = minOf(w, h) * 0.3f
             canvas.drawRoundRect(inset, inset, w - inset, h - inset, rad, rad, bgPaint)
-            canvas.drawRoundRect(inset, inset, w - inset, h - inset, rad, rad, ringPaint)
         } else {
             val r = minOf(w, h) / 2f - inset
             canvas.drawCircle(cx, cy, r, bgPaint)
-            canvas.drawCircle(cx, cy, r, ringPaint)
         }
 
         when (mode) {
@@ -173,9 +160,8 @@ class OutlineIconView(
                 canvas.drawCircle(bl + 6f * s, bt + 5f * s, 1.6f * s, fillPaint)
             }
             Mode.TRASH -> {
-                // Outline trash can: handle, lid, tapered body, two inner lines
-                canvas.drawLine(cx - 3.5f * s, cy - 11f * s, cx + 3.5f * s, cy - 11f * s, glyphPaint)   // handle
-                canvas.drawLine(cx - 10f * s, cy - 8f * s, cx + 10f * s, cy - 8f * s, glyphPaint)       // lid
+                canvas.drawLine(cx - 3.5f * s, cy - 11f * s, cx + 3.5f * s, cy - 11f * s, glyphPaint)
+                canvas.drawLine(cx - 10f * s, cy - 8f * s, cx + 10f * s, cy - 8f * s, glyphPaint)
 
                 val body = Path().apply {
                     moveTo(cx - 8f * s, cy - 8f * s)

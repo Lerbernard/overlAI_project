@@ -53,6 +53,44 @@ object ThemeHelper {
     fun btnSecondaryText(context: Context) = color(context,
         if (isDark(context)) R.color.dm_btn_secondary_text else R.color.lm_btn_secondary_text)
 
+    // ✅ semantic colors — change them in colors.xml / colors-dark.xml only
+    fun scoreLow(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_score_low else R.color.lm_score_low)
+
+    fun scoreMid(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_score_mid else R.color.lm_score_mid)
+
+    fun scoreHigh(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_score_high else R.color.lm_score_high)
+
+    /** One place that maps a percentage to its color. */
+    fun scoreColor(context: Context, pct: Int) = when {
+        pct < 30 -> scoreLow(context)
+        pct < 70 -> scoreMid(context)
+        else -> scoreHigh(context)
+    }
+
+    fun idleGray(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_idle_gray else R.color.lm_idle_gray)
+
+    fun btnNeutral(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_btn_neutral else R.color.lm_btn_neutral)
+
+    fun divider(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_divider else R.color.lm_divider)
+
+    fun overlayBtn(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_overlay_btn else R.color.lm_overlay_btn)
+
+    fun overlayGlyph(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_overlay_glyph else R.color.lm_overlay_glyph)
+
+    fun overlayPanel(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_overlay_panel else R.color.lm_overlay_panel)
+
+    fun scrim(context: Context) = color(context,
+        if (isDark(context)) R.color.dm_scrim else R.color.lm_scrim)
+
     // ─── Apply to settings cards ──────────────────────────────────────────────
 
     fun applyCardTheme(settingsLayout: LinearLayout, context: Context) {

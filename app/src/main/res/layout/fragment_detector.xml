@@ -1,222 +1,281 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- res/layout/fragment_detector.xml — dropzone centered to the true middle of the screen -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@android:color/transparent">
+    android:layout_height="match_parent">
 
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/subTabLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@android:color/transparent"
-        app:tabMode="fixed"
-        app:tabGravity="fill"
-        app:tabIndicatorColor="@color/lm_tab_indicator"
-        app:tabSelectedTextColor="@color/lm_tab_indicator"
-        app:tabTextColor="@color/lm_tab_text"
-        app:tabIndicatorHeight="4dp">
-
-        <com.google.android.material.tabs.TabItem
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Image" />
-
-        <com.google.android.material.tabs.TabItem
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Video" />
-    </com.google.android.material.tabs.TabLayout>
-
-    <!-- IMAGE PANEL -->
-    <FrameLayout
-        android:id="@+id/imagePanel"
+    <!-- selected media + result, scrollable between title and button -->
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:visibility="visible">
+        android:layout_marginTop="52dp"
+        android:layout_marginBottom="72dp"
+        android:overScrollMode="never"
+        android:scrollbars="none">
 
         <LinearLayout
+            android:id="@+id/contentArea"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="20dp"
-            android:gravity="center">
+            android:gravity="center_horizontal">
 
-            <!-- ✅ Rounded image preview, fits full image -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/imagePreviewCard"
+            <FrameLayout
+                android:id="@+id/previewCard"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:visibility="gone"
-                android:layout_marginBottom="20dp"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="0dp">
+                android:layout_height="wrap_content"
+                android:visibility="gone">
 
                 <ImageView
-                    android:id="@+id/imagePreview"
+                    android:id="@+id/previewImage"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
+                    android:layout_height="wrap_content"
                     android:adjustViewBounds="true"
+                    android:maxHeight="320dp"
                     android:scaleType="fitCenter"
-                    android:contentDescription="Image preview" />
+                    android:contentDescription="Selected media" />
 
-            </com.google.android.material.card.MaterialCardView>
+                <View
+                    android:id="@+id/scanLine"
+                    android:layout_width="match_parent"
+                    android:layout_height="3dp"
+                    android:visibility="gone" />
 
-            <!-- Buttons always centered at bottom -->
+                <TextView
+                    android:id="@+id/videoBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|end"
+                    android:layout_margin="10dp"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="3dp"
+                    android:paddingBottom="3dp"
+                    android:text="VIDEO"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/white"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
             <LinearLayout
+                android:id="@+id/verdictCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="18dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/verdictText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/scorePill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/detailsCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
                 android:orientation="vertical"
-                android:gravity="center">
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp"
+                android:visibility="gone">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnPickImage"
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:text="Select Image"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white"
-                    android:layout_marginBottom="12dp"
-                    app:backgroundTint="@color/lm_primary"
-                    app:cornerRadius="30dp"
-                    app:elevation="12dp" />
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp">
+                    <TextView android:id="@+id/lblLikelihood"
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="AI likelihood" android:textSize="15sp"/>
+                    <TextView android:id="@+id/valLikelihood"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:textSize="15sp" android:textStyle="bold"/>
+                </LinearLayout>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnCheckImage"
-                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                <View android:id="@+id/detDiv1"
+                    android:layout_width="match_parent" android:layout_height="1dp" />
+
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:text="Check Image"
-                    android:textAllCaps="false"
-                    android:textColor="@color/lm_btn_secondary_text"
-                    android:enabled="false"
-                    android:visibility="gone"
-                    android:layout_marginBottom="16dp"
-                    app:backgroundTint="@color/lm_btn_secondary"
-                    app:cornerRadius="30dp"
-                    app:strokeWidth="0dp" />
-
-                <TextView
-                    android:id="@+id/imageResultText"
-                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="48sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/lm_text_primary"
-                    android:gravity="center"
-                    android:layout_marginBottom="6dp" />
+                    android:orientation="horizontal"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp">
+                    <TextView android:id="@+id/lblConfidence"
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="Confidence" android:textSize="15sp"/>
+                    <TextView android:id="@+id/valConfidence"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:textSize="15sp" android:textStyle="bold"/>
+                </LinearLayout>
 
-                <TextView
-                    android:id="@+id/imageStatusText"
-                    android:layout_width="wrap_content"
+                <View android:id="@+id/detDiv2"
+                    android:layout_width="match_parent" android:layout_height="1dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textSize="14sp"
-                    android:textColor="@color/lm_text_secondary"
-                    android:gravity="center" />
-
+                    android:orientation="horizontal"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp">
+                    <TextView android:id="@+id/lblType"
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="Media type" android:textSize="15sp"/>
+                    <TextView android:id="@+id/valType"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:textSize="15sp" android:textStyle="bold"/>
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
-    </FrameLayout>
+    </ScrollView>
 
-    <!-- VIDEO PANEL -->
-    <FrameLayout
-        android:id="@+id/videoPanel"
+    <!-- ✅ empty state: centered against the FULL page height -->
+    <LinearLayout
+        android:id="@+id/emptyState"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone">
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingTop="44dp"
+        android:paddingBottom="44dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <FrameLayout
+            android:id="@+id/emptyIconWrap"
+            android:layout_width="96dp"
+            android:layout_height="96dp">
+
+            <ImageView
+                android:id="@+id/emptyIcon"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_nav_detector"
+                android:contentDescription="Detector" />
+
+            <TextView
+                android:id="@+id/plusBadge"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_gravity="bottom|end"
+                android:gravity="center"
+                android:text="+"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/emptyTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Tap to select a file"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/emptyHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:paddingStart="32dp"
+            android:paddingEnd="32dp"
+            android:gravity="center"
+            android:text="Pick any image or video and OverlAI will tell you how likely it is to be AI-generated"
+            android:textSize="14sp" />
 
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:padding="20dp"
-            android:gravity="center">
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="horizontal">
 
-            <!-- ✅ Rounded video preview, fits full video -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/videoContainer"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:visibility="gone"
-                android:layout_marginBottom="20dp"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="0dp">
-
-                <VideoView
-                    android:id="@+id/videoPreview"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:layout_gravity="center" />
-
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Buttons always centered at bottom -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnPickVideo"
-                    android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:text="Select Video"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white"
-                    android:layout_marginBottom="12dp"
-                    app:backgroundTint="@color/lm_primary"
-                    app:cornerRadius="30dp"
-                    app:elevation="12dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnCheckVideo"
-                    style="@style/Widget.MaterialComponents.Button.TextButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:text="Check Video"
-                    android:textAllCaps="false"
-                    android:textColor="@color/lm_btn_secondary_text"
-                    android:enabled="false"
-                    android:visibility="gone"
-                    android:layout_marginBottom="16dp"
-                    app:backgroundTint="@color/lm_btn_secondary"
-                    app:cornerRadius="30dp"
-                    app:strokeWidth="0dp" />
-
-                <TextView
-                    android:id="@+id/videoResultText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="48sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/lm_text_primary"
-                    android:gravity="center"
-                    android:layout_marginBottom="6dp" />
-
-                <TextView
-                    android:id="@+id/videoStatusText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="14sp"
-                    android:textColor="@color/lm_text_secondary"
-                    android:gravity="center" />
-
-            </LinearLayout>
+            <TextView android:id="@+id/chip1"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:paddingStart="14dp" android:paddingEnd="14dp"
+                android:paddingTop="6dp" android:paddingBottom="6dp"
+                android:text="Images" android:textSize="12sp"/>
+            <TextView android:id="@+id/chip2"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:paddingStart="14dp" android:paddingEnd="14dp"
+                android:paddingTop="6dp" android:paddingBottom="6dp"
+                android:text="Videos" android:textSize="12sp"/>
+            <TextView android:id="@+id/chip3"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:paddingStart="14dp" android:paddingEnd="14dp"
+                android:paddingTop="6dp" android:paddingBottom="6dp"
+                android:text="Crop first" android:textSize="12sp"/>
         </LinearLayout>
-    </FrameLayout>
+    </LinearLayout>
 
-</LinearLayout>
+    <!-- title floats on top -->
+    <TextView
+        android:id="@+id/detTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Detector"
+        android:textSize="30sp"
+        android:textStyle="bold" />
+
+    <!-- button pinned to the bottom -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnChoose"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="Choose media"
+            android:textAllCaps="false"
+            app:cornerRadius="26dp" />
+
+        <ProgressBar
+            android:id="@+id/btnLoader"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="22dp"
+            android:indeterminateTint="@color/white"
+            android:visibility="gone" />
+    </FrameLayout>
+</FrameLayout>

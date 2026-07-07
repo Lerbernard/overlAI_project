@@ -1,372 +1,443 @@
 package com.example.test103
 
-import android.app.Activity.RESULT_OK
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.*
-import android.widget.*
+import android.util.TypedValue
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.fragment.app.Fragment
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.tabs.TabLayout
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.RequestBody.Companion.asRequestBody
-import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 
 class DetectorFragment : Fragment() {
 
-    private lateinit var imagePanel: FrameLayout
-    private lateinit var imagePreviewCard: MaterialCardView
-    private lateinit var btnPickImage: MaterialButton
-    private lateinit var btnCheckImage: MaterialButton
-    private lateinit var imagePreview: ImageView
-    private lateinit var imageResultText: TextView
-    private lateinit var imageStatusText: TextView
+    private lateinit var titleText: TextView
+    private lateinit var emptyState: LinearLayout
+    private lateinit var emptyIcon: ImageView
+    private lateinit var emptyHint: TextView
+    private lateinit var previewCard: View
+    private lateinit var previewImage: ImageView
+    private lateinit var videoBadge: TextView
+    private lateinit var scanLine: View
+    private var scanAnim: android.animation.ObjectAnimator? = null
+    private lateinit var statusText: TextView
+    private lateinit var verdictCard: LinearLayout
+    private lateinit var verdictText: TextView
+    private lateinit var scorePill: TextView
+    private lateinit var detailsCard: LinearLayout
+    private lateinit var valLikelihood: TextView
+    private lateinit var valConfidence: TextView
+    private lateinit var valType: TextView
+    private var lastIsVideo = false
+    private var lastPreviewBmp: Bitmap? = null
+    private var session = 0
+    private lateinit var emptyIconWrap: android.widget.FrameLayout
+    private lateinit var emptyTitle: TextView
+    private var pulseAnim: android.animation.ObjectAnimator? = null
+    private lateinit var btnChoose: MaterialButton
+    private lateinit var btnLoader: android.widget.ProgressBar
 
-    private lateinit var videoPanel: FrameLayout
-    private lateinit var videoContainer: MaterialCardView
-    private lateinit var btnPickVideo: MaterialButton
-    private lateinit var btnCheckVideo: MaterialButton
-    private lateinit var videoPreview: VideoView
-    private lateinit var videoResultText: TextView
-    private lateinit var videoStatusText: TextView
+    private val PICK_MEDIA = 201
+    private val CROP_IMAGE = 202
 
-    private var selectedImageUri: Uri? = null
-    private var selectedVideoUri: Uri? = null
-    private var videoIsPrepared = false
-
-    private val client = OkHttpClient()
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    private val PICK_IMAGE_REQUEST = 101
-    private val PICK_VIDEO_REQUEST = 102
-    private val CROP_IMAGE_REQUEST = 103
-
-    companion object {
-        private val API_USER   = BuildConfig.SE_API_USER   // was hardcoded
-        private val API_SECRET = BuildConfig.SE_API_SECRET
-    }
+    private fun dp(v: Int): Int = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View = inflater.inflate(R.layout.fragment_detector, container, false)
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+    ): View {
+        val v = inflater.inflate(R.layout.fragment_detector, container, false)
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+        titleText = v.findViewById(R.id.detTitle)
+        emptyState = v.findViewById(R.id.emptyState)
+        emptyIcon = v.findViewById(R.id.emptyIcon)
+        emptyHint = v.findViewById(R.id.emptyHint)
+        emptyIconWrap = v.findViewById(R.id.emptyIconWrap)
+        emptyTitle = v.findViewById(R.id.emptyTitle)
+        emptyState.isClickable = true
+        emptyState.setOnClickListener { openPicker() }   // ✅ the whole card is tappable
+        previewCard = v.findViewById(R.id.previewCard)
+        previewImage = v.findViewById(R.id.previewImage)
+        videoBadge = v.findViewById(R.id.videoBadge)
+        scanLine = v.findViewById(R.id.scanLine)
+        statusText = v.findViewById(R.id.statusText)
+        verdictCard = v.findViewById(R.id.verdictCard)
+        verdictText = v.findViewById(R.id.verdictText)
+        scorePill = v.findViewById(R.id.scorePill)
+        detailsCard = v.findViewById(R.id.detailsCard)
+        valLikelihood = v.findViewById(R.id.valLikelihood)
+        valConfidence = v.findViewById(R.id.valConfidence)
+        valType = v.findViewById(R.id.valType)
+        btnChoose = v.findViewById(R.id.btnChoose)
+        btnLoader = v.findViewById(R.id.btnLoader)
 
-        val subTabLayout = view.findViewById<TabLayout>(R.id.subTabLayout)
-        imagePanel       = view.findViewById(R.id.imagePanel)
-        videoPanel       = view.findViewById(R.id.videoPanel)
+        previewImage.setOnClickListener { showFullPreview() }
 
-        imagePreviewCard = view.findViewById(R.id.imagePreviewCard)
-        btnPickImage     = view.findViewById(R.id.btnPickImage)
-        btnCheckImage    = view.findViewById(R.id.btnCheckImage)
-        imagePreview     = view.findViewById(R.id.imagePreview)
-        imageResultText  = view.findViewById(R.id.imageResultText)
-        imageStatusText  = view.findViewById(R.id.imageStatusText)
+        // ✅ let the pulsing badge draw outside its bounds — no more clipping
+        emptyState.clipChildren = false
+        emptyState.clipToPadding = false
 
-        videoContainer   = view.findViewById(R.id.videoContainer)
-        btnPickVideo     = view.findViewById(R.id.btnPickVideo)
-        btnCheckVideo    = view.findViewById(R.id.btnCheckVideo)
-        videoPreview     = view.findViewById(R.id.videoPreview)
-        videoResultText  = view.findViewById(R.id.videoResultText)
-        videoStatusText  = view.findViewById(R.id.videoStatusText)
+        applyTheme(v)
+        startPulse()
 
-        btnCheckImage.visibility = View.GONE
-        btnCheckVideo.visibility = View.GONE
-
-        applyTheme(view)
-
-        // ✅ No MediaController — tap to play/pause
-        videoPreview.setOnClickListener {
-            if (!videoIsPrepared) return@setOnClickListener
-            if (videoPreview.isPlaying) {
-                videoPreview.pause()
-            } else {
-                videoPreview.start()
-            }
-        }
-
-        // ✅ Prepare but do NOT auto-play
-        videoPreview.setOnPreparedListener { mp ->
-            videoIsPrepared = true
-            mp.isLooping = true
-            // Show first frame by seeking to 0 without playing
-            mp.seekTo(0)
-        }
-
-        subTabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab?) {
-                when (tab?.position) {
-                    0 -> { imagePanel.visibility = View.VISIBLE; videoPanel.visibility = View.GONE }
-                    1 -> { imagePanel.visibility = View.GONE;    videoPanel.visibility = View.VISIBLE }
-                }
-            }
-            override fun onTabUnselected(tab: TabLayout.Tab?) {
-                when (tab?.position) {
-                    0 -> clearImage()
-                    1 -> clearVideo()
-                }
-            }
-            override fun onTabReselected(tab: TabLayout.Tab?) {}
-        })
-
-        // ✅ one "Choose media" button — auto-detects image vs video
-        btnPickVideo.visibility = View.GONE
-        btnPickImage.text = "Choose media"
-        btnPickImage.setOnClickListener {
-            clearImage()
-            clearVideo()
-            val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "*/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-            }
-            startActivityForResult(Intent.createChooser(pick, "Select image or video"), PICK_IMAGE_REQUEST)
-        }
+        btnChoose.setOnClickListener { openPicker() }
+        return v
     }
 
-    // ─── Clear helpers ────────────────────────────────────────────────────────
-
-    private fun clearImage() {
-        selectedImageUri = null
-        imagePreview.setImageURI(null)
-        imagePreviewCard.visibility = View.GONE
-        imageResultText.text = ""
-        imageStatusText.text = ""
+    private fun openPicker() {
+        clearResult()
+        val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+        }
+        startActivityForResult(Intent.createChooser(pick, "Select image or video"), PICK_MEDIA)
     }
-
-    private fun clearVideo() {
-        selectedVideoUri = null
-        videoIsPrepared = false
-        videoPreview.stopPlayback()
-        videoContainer.visibility = View.GONE
-        videoResultText.text = ""
-        videoStatusText.text = ""
-    }
-
-    // ─── Activity results ─────────────────────────────────────────────────────
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        // ✅ Crop result carries no data uri — handle it before the null guard
-        if (requestCode == CROP_IMAGE_REQUEST) {
-            if (resultCode == RESULT_OK) {
+        if (requestCode == CROP_IMAGE) {
+            if (resultCode == Activity.RESULT_OK) {
                 val out = File(requireContext().cacheDir, "detector_crop_out.png")
                 val bmp = if (out.exists()) BitmapFactory.decodeFile(out.absolutePath) else null
                 if (bmp != null) {
-                    imagePreview.setImageBitmap(bmp)
-                    imagePreviewCard.visibility = View.VISIBLE
-                    imageResultText.text = ""
+                    showPreview(bmp, isVideo = false)
                     detectImageFile(out)
-                } else {
-                    imageStatusText.text = "Crop failed."
-                }
-            } else {
-                imageStatusText.text = "Crop cancelled."
-            }
+                } else showMessage("Crop failed")
+            } else showMessage("Crop cancelled")
             return
         }
 
-        if (resultCode != RESULT_OK || data?.data == null) return
+        if (requestCode != PICK_MEDIA || resultCode != Activity.RESULT_OK || data?.data == null) return
 
-        when (requestCode) {
-            PICK_IMAGE_REQUEST -> {
-                // ✅ shared picker: route videos to the video flow
-                val mime = requireContext().contentResolver.getType(data.data!!) ?: ""
-                if (mime.startsWith("video/")) {
-                    selectedVideoUri = data.data
-                    videoIsPrepared = false
-                    videoContainer.visibility = View.VISIBLE
-                    videoPreview.setVideoURI(selectedVideoUri)
-                    videoResultText.text = ""
-                    runVideoDetection(selectedVideoUri!!)
-                    return
-                }
-                selectedImageUri = data.data
-                imageResultText.text = ""
+        val uri = data.data!!
+        val mime = requireContext().contentResolver.getType(uri) ?: ""
+        if (mime.startsWith("video/")) handleVideo(uri) else handleImage(uri)
+    }
 
-                val cropEnabled = requireContext()
-                    .getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("use_crop", true)
+    private fun handleImage(uri: Uri) {
+        val input = copyUriToCache(uri, "detector_crop_in.png") ?: run {
+            showMessage("Couldn't read the file"); return
+        }
 
-                if (cropEnabled) {
-                    // ✅ Crop Tool is ON — crop before detecting, same as the overlay
-                    val input = copyUriToCache(selectedImageUri!!, "detector_crop_in.png")
-                    if (input != null) {
-                        startActivityForResult(
-                            Intent(requireContext(), CropActivity::class.java).apply {
-                                putExtra(CropActivity.EXTRA_INPUT, input.absolutePath)
-                                putExtra(CropActivity.EXTRA_OUTPUT,
-                                    File(requireContext().cacheDir, "detector_crop_out.png").absolutePath)
-                            }, CROP_IMAGE_REQUEST)
-                    } else {
-                        imageStatusText.text = "Failed to read file."
-                    }
-                } else {
-                    imagePreview.setImageURI(selectedImageUri)
-                    imagePreviewCard.visibility = View.VISIBLE
-                    runImageDetection(selectedImageUri!!)
-                }
-            }
-            PICK_VIDEO_REQUEST -> {
-                selectedVideoUri = data.data
-                videoIsPrepared = false
-                videoContainer.visibility = View.VISIBLE
-                // ✅ setVideoURI triggers prepare but onPreparedListener won't auto-play
-                videoPreview.setVideoURI(selectedVideoUri)
-                videoResultText.text = ""
-                runVideoDetection(selectedVideoUri!!)
-            }
+        val cropEnabled = requireContext()
+            .getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            .getBoolean("use_crop", true)
+
+        if (cropEnabled) {
+            startActivityForResult(
+                Intent(requireContext(), CropActivity::class.java).apply {
+                    putExtra(CropActivity.EXTRA_INPUT, input.absolutePath)
+                    putExtra(CropActivity.EXTRA_OUTPUT,
+                        File(requireContext().cacheDir, "detector_crop_out.png").absolutePath)
+                }, CROP_IMAGE)
+        } else {
+            val bmp = BitmapFactory.decodeFile(input.absolutePath)
+            if (bmp == null) { showMessage("Couldn't read the image"); return }
+            showPreview(bmp, isVideo = false)
+            detectImageFile(input)
         }
     }
 
-    // ─── Lifecycle ────────────────────────────────────────────────────────────
-
-    override fun onPause() {
-        super.onPause()
-        if (videoPreview.isPlaying) videoPreview.pause()
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        videoPreview.stopPlayback()
-    }
-
-    // ─── Image Detection ──────────────────────────────────────────────────────
-
-    private fun runImageDetection(uri: Uri) {
-        val file = copyUriToCache(uri, "detector_image.png") ?: run {
-            imageStatusText.text = "Failed to read file."
-            return
+    private fun handleVideo(uri: Uri) {
+        val file = copyUriToCache(uri, "detector_video.mp4") ?: run {
+            showMessage("Couldn't read the file"); return
         }
-        detectImageFile(file)
+
+        var frame: Bitmap? = null
+        try {
+            val r = MediaMetadataRetriever()
+            r.setDataSource(file.absolutePath)
+            frame = r.getFrameAtTime(0)
+            r.release()
+        } catch (_: Exception) {}
+        frame?.let { showPreview(it, isVideo = true) }
+
+        setLoading()
+        val s = ++session
+        DetectionClient.detectVideo(requireContext(), file,
+            onResult = { pct ->
+                if (s != session || !isAdded) return@detectVideo
+                showResult(pct)
+                try { HistoryManager.add(requireContext(), pct, "Video", frame) } catch (_: Exception) {}
+            },
+            onError = { msg ->
+                if (s != session || !isAdded) return@detectVideo
+                showMessage(msg)
+            })
     }
 
     private fun detectImageFile(file: File) {
-        setImageLoading(true)
-        imageStatusText.text = "Analysing…"
-        imageResultText.text = ""
-
-        // ✅ shared pipeline: cache hits are free, real calls are counted,
-        // and errors come back as sentences
+        setLoading()
+        val s = ++session
         DetectionClient.detectImage(requireContext(), file,
             onResult = { pct ->
-                if (!isAdded) return@detectImage
-                imageResultText.text = "$pct%"
-                imageStatusText.text = buildVerdict(pct)
-                imageResultText.setTextColor(scoreColor(pct))
+                if (s != session || !isAdded) return@detectImage
+                showResult(pct)
                 try {
                     val thumb = BitmapFactory.decodeFile(file.absolutePath)
                     HistoryManager.add(requireContext(), pct, "Image", thumb)
                     thumb?.recycle()
                 } catch (_: Exception) {}
-                setImageLoading(false)
             },
             onError = { msg ->
-                if (!isAdded) return@detectImage
-                imageStatusText.text = msg
-                setImageLoading(false)
+                if (s != session || !isAdded) return@detectImage
+                showMessage(msg)
             })
     }
 
-    // ─── Video Detection ──────────────────────────────────────────────────────
-
-    private fun runVideoDetection(uri: Uri) {
-        setVideoLoading(true)
-        videoStatusText.text = "Uploading and analysing…"
-        videoResultText.text = ""
-
-        val file = copyUriToCache(uri, "detector_video.mp4") ?: run {
-            videoStatusText.text = "Failed to read file."
-            setVideoLoading(false)
-            return
-        }
-
-        DetectionClient.detectVideo(requireContext(), file,
-            onResult = { pct ->
-                if (!isAdded) return@detectVideo
-                videoResultText.text = "$pct%"
-                videoStatusText.text = buildVerdict(pct)
-                videoResultText.setTextColor(scoreColor(pct))
-                try {
-                    val r = MediaMetadataRetriever()
-                    r.setDataSource(file.absolutePath)
-                    val frame = r.getFrameAtTime(0)
-                    r.release()
-                    HistoryManager.add(requireContext(), pct, "Video", frame)
-                    frame?.recycle()
-                } catch (_: Exception) {}
-                setVideoLoading(false)
-            },
-            onError = { msg ->
-                if (!isAdded) return@detectVideo
-                videoStatusText.text = msg
-                setVideoLoading(false)
-            })
+    private fun showPreview(bmp: Bitmap, isVideo: Boolean) {
+        lastIsVideo = isVideo
+        emptyState.visibility = View.GONE
+        previewCard.visibility = View.VISIBLE
+        previewImage.setImageBitmap(bmp)
+        lastPreviewBmp = bmp
+        videoBadge.visibility = if (isVideo) View.VISIBLE else View.GONE
     }
 
-    // ─── Theme ────────────────────────────────────────────────────────────────
-
-    private fun applyTheme(view: View) {
-        val t   = ThemeHelper
-        val ctx = requireContext()
-        view.setBackgroundColor(t.background(ctx))
-        imagePanel.setBackgroundColor(t.background(ctx))
-        videoPanel.setBackgroundColor(t.background(ctx))
-        imagePreviewCard.setCardBackgroundColor(t.background(ctx))  // ✅ was t.card(ctx)
-        videoContainer.setCardBackgroundColor(t.background(ctx))
-        val subTab = view.findViewById<TabLayout>(R.id.subTabLayout)
-        subTab.setBackgroundColor(t.background(ctx))
-        subTab.setTabTextColors(t.tabText(ctx), t.tabIndicator(ctx))
-        subTab.setSelectedTabIndicatorColor(t.tabIndicator(ctx))
-        btnPickImage.backgroundTintList = ColorStateList.valueOf(t.primary(ctx))
-        btnPickVideo.backgroundTintList = ColorStateList.valueOf(t.primary(ctx))
-        imageResultText.setTextColor(t.textPrimary(ctx))
-        imageStatusText.setTextColor(t.textSecondary(ctx))
-        videoResultText.setTextColor(t.textPrimary(ctx))
-        videoStatusText.setTextColor(t.textSecondary(ctx))
+    /** ✅ tap the preview to view it fullscreen */
+    private fun showFullPreview() {
+        val bmp = lastPreviewBmp ?: return
+        val d = android.app.Dialog(requireContext(),
+            android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        d.setContentView(ImageView(requireContext()).apply {
+            setImageBitmap(bmp)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
+            setOnClickListener { d.dismiss() }
+        })
+        d.show()
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    /** ✅ called when the user navigates to another tab */
+    fun resetPage() {
+        if (!isAdded || view == null) return
+        session++                       // drop any in-flight callbacks
+        stopScan()
+        btnLoader.visibility = View.GONE
+        btnChoose.isEnabled = true
+        btnChoose.text = "Choose media"
+        previewCard.visibility = View.GONE
+        previewImage.setImageBitmap(null)
+        lastPreviewBmp = null
+        clearResult()
+        emptyState.visibility = View.VISIBLE
+    }
 
-    private fun copyUriToCache(uri: Uri, fileName: String): File? {
-        return try {
-            val file = File(requireContext().cacheDir, fileName)
-            requireContext().contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(file).use { output -> input.copyTo(output) }
+    private fun setLoading() {
+        verdictCard.visibility = View.GONE
+        detailsCard.visibility = View.GONE
+        statusText.visibility = View.VISIBLE
+        statusText.text = "Analysing…"
+        statusText.setTextColor(ThemeHelper.textSecondary(requireContext()))
+        btnChoose.isEnabled = false
+        btnChoose.text = "Analysing…"
+        btnLoader.visibility = View.VISIBLE   // ✅ spinner in the button
+        startScan()   // ✅ visual feedback while the request is in flight
+    }
+
+    /** ✅ teal line sweeping over the preview during analysis */
+    private fun startScan() {
+        scanLine.setBackgroundColor(ThemeHelper.accent(requireContext()))
+        scanLine.visibility = View.VISIBLE
+        previewImage.post {
+            val travel = (previewImage.height - scanLine.height).coerceAtLeast(1).toFloat()
+            scanAnim?.cancel()
+            scanAnim = android.animation.ObjectAnimator.ofFloat(
+                scanLine, "translationY", 0f, travel).apply {
+                duration = 1100
+                repeatMode = android.animation.ValueAnimator.REVERSE
+                repeatCount = android.animation.ValueAnimator.INFINITE
+                interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                start()
             }
-            file
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
         }
     }
 
-    private fun buildVerdict(pct: Int) = when {
-        pct < 30 -> "✅ Likely real ($pct% AI score)"
-        pct < 70 -> "⚠️ Uncertain ($pct% AI score)"
-        else     -> "🚨 Likely AI-generated ($pct% AI score)"
+    private fun stopScan() {
+        scanAnim?.cancel()
+        scanAnim = null
+        scanLine.visibility = View.GONE
+        scanLine.translationY = 0f
     }
 
-    private fun scoreColor(pct: Int) = when {
-        pct < 30 -> Color.parseColor("#4CAF50")
-        pct < 70 -> Color.parseColor("#FF9800")
-        else     -> Color.RED
+    private fun showResult(pct: Int) {
+        stopScan()
+        btnLoader.visibility = View.GONE
+        btnChoose.isEnabled = true
+        btnChoose.text = "Check another"
+        val t = ThemeHelper
+        val ctx = requireContext()
+        val c = scoreColor(pct)
+        statusText.visibility = View.GONE
+
+        // ✅ verdict banner: tinted + bordered in the result color
+        verdictCard.visibility = View.VISIBLE
+        verdictCard.background = GradientDrawable().apply {
+            cornerRadius = dp(18).toFloat()
+            setColor(Color.argb(34, Color.red(c), Color.green(c), Color.blue(c)))
+            setStroke(dp(1), c)
+        }
+        verdictText.text = when {
+            pct < 30 -> "This looks like real content"
+            pct < 70 -> "This one's hard to call"
+            else -> "This looks AI-generated"
+        }
+        verdictText.setTextColor(t.textPrimary(ctx))
+        scorePill.text = "$pct%"
+        scorePill.setTextColor(c)
+        scorePill.background = GradientDrawable().apply {
+            cornerRadius = dp(20).toFloat()
+            setColor(Color.WHITE)
+        }
+
+        // ✅ details card
+        detailsCard.visibility = View.VISIBLE
+        detailsCard.background = GradientDrawable().apply {
+            cornerRadius = dp(18).toFloat()
+            setColor(t.card(ctx))
+        }
+        listOf(R.id.lblLikelihood, R.id.lblConfidence, R.id.lblType).forEach {
+            view?.findViewById<TextView>(it)?.setTextColor(t.textSecondary(ctx))
+        }
+        listOf(R.id.detDiv1, R.id.detDiv2).forEach {
+            view?.findViewById<View>(it)?.setBackgroundColor(ThemeHelper.divider(requireContext()))
+        }
+        valLikelihood.text = "$pct%"
+        valLikelihood.setTextColor(c)
+        valConfidence.text = when {
+            kotlin.math.abs(pct - 50) >= 35 -> "High"
+            kotlin.math.abs(pct - 50) >= 15 -> "Medium"
+            else -> "Low"
+        }
+        valConfidence.setTextColor(t.textPrimary(ctx))
+        valType.text = if (lastIsVideo) "Video" else "Image"
+        valType.setTextColor(t.textPrimary(ctx))
+
+        btnChoose.text = "Try another"
     }
 
-    private fun setImageLoading(loading: Boolean) { btnPickImage.isEnabled = !loading }
-    private fun setVideoLoading(loading: Boolean)  { btnPickVideo.isEnabled = !loading }
+    private fun showMessage(msg: String) {
+        stopScan()
+        btnLoader.visibility = View.GONE
+        btnChoose.isEnabled = true
+        btnChoose.text = "Choose media"
+        verdictCard.visibility = View.GONE
+        detailsCard.visibility = View.GONE
+        statusText.visibility = View.VISIBLE
+        statusText.text = msg
+        statusText.setTextColor(ThemeHelper.textSecondary(requireContext()))
+    }
+
+    private fun clearResult() {
+        statusText.visibility = View.GONE
+        verdictCard.visibility = View.GONE
+        detailsCard.visibility = View.GONE
+    }
+
+    override fun onDestroyView() {
+        stopScan()
+        pulseAnim?.cancel()
+        super.onDestroyView()
+    }
+
+    private fun buildVerdict(pct: Int): String = when {
+        pct < 30 -> "Likely real"
+        pct < 70 -> "Uncertain"
+        else -> "Likely AI-generated"
+    }
+
+    private fun scoreColor(pct: Int) = ThemeHelper.scoreColor(requireContext(), pct)
+
+    private fun copyUriToCache(uri: Uri, name: String): File? {
+        return try {
+            val f = File(requireContext().cacheDir, name)
+            val input = requireContext().contentResolver.openInputStream(uri) ?: return null
+            input.use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out) } }
+            f
+        } catch (e: Exception) { null }
+    }
+
+    private fun startPulse() {
+        pulseAnim?.cancel()
+        // ✅ breathing float: the badge gently swells and rises together
+        pulseAnim = android.animation.ObjectAnimator.ofPropertyValuesHolder(
+            emptyIconWrap,
+            android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.06f),
+            android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.06f),
+            android.animation.PropertyValuesHolder.ofFloat("translationY", 0f, -dp(5).toFloat())
+        ).apply {
+            duration = 1600
+            repeatMode = android.animation.ValueAnimator.REVERSE
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            start()
+        }
+    }
+
+    private fun applyTheme(root: View) {
+        val t = ThemeHelper
+        val ctx = requireContext()
+
+        titleText.setTextColor(t.textPrimary(ctx))
+        emptyTitle.setTextColor(t.textPrimary(ctx))
+        emptyHint.setTextColor(t.textSecondary(ctx))
+        emptyIcon.setColorFilter(t.accent(ctx))   // ✅ teal lens now
+        emptyIconWrap.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(t.card(ctx))
+        }
+        // ✅ dropzone: solid purple border (colors swapped)
+        emptyState.background = GradientDrawable().apply {
+            cornerRadius = dp(24).toFloat()
+            setColor(Color.TRANSPARENT)
+            setStroke(dp(2), t.primary(ctx))
+        }
+        // ✅ teal plus badge on the purple lens — both brand colors
+        root.findViewById<TextView>(R.id.plusBadge)?.apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(t.primary(ctx))   // ✅ purple badge on the teal lens
+            }
+            setTextColor(Color.WHITE)
+        }
+        listOf(R.id.chip1, R.id.chip2, R.id.chip3).forEach { id ->
+            root.findViewById<TextView>(id)?.apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(16).toFloat()
+                    setColor(t.card(ctx))
+                }
+                setTextColor(t.accent(ctx))   // ✅ teal words instead
+                setOnClickListener { openPicker() }
+            }
+        }
+
+        previewImage.clipToOutline = true
+        previewImage.background = GradientDrawable().apply {
+            cornerRadius = dp(18).toFloat()
+            setColor(t.card(ctx))
+        }
+
+        videoBadge.setTextColor(Color.WHITE)
+        videoBadge.background = GradientDrawable().apply {
+            cornerRadius = dp(10).toFloat()
+            setColor(ThemeHelper.scrim(requireContext()))
+        }
+
+        btnChoose.backgroundTintList = android.content.res.ColorStateList.valueOf(t.primary(ctx))
+        btnChoose.setTextColor(Color.WHITE)
+    }
 }

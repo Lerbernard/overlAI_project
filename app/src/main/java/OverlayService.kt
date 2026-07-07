@@ -75,9 +75,10 @@ class OverlayService : Service() {
     private var lastMode = "photo"        // which source produced the pending result
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private val BRIGHT_RED = Color.parseColor("#FF1744")
-    private val PURPLE = Color.parseColor("#6200EE")
-    private val TEAL = Color.parseColor("#03DAC5")
+    // ✅ all colors come from colors.xml / colors-dark.xml via ThemeHelper
+    private val BRIGHT_RED get() = ThemeHelper.scoreHigh(this)
+    private val PURPLE get() = ThemeHelper.primary(this)
+    private val TEAL get() = ThemeHelper.accent(this)
 
     companion object {
         const val ACTION_STOP_SERVICE = "ACTION_STOP_SERVICE"
@@ -124,16 +125,59 @@ class OverlayService : Service() {
     private val deleteWindowSize: Int get() = dpToPx(120)
     private val deleteIconSize: Int get() = dpToPx(72)
     private val deleteBottomOffset: Int get() = dpToPx(28)
-    private val deleteProximity: Int get() = dpToPx(80)
+    private val deleteProximity: Int get() = dpToPx(48)   // ✅ only when very close
 
     /** Where the main button's top edge is on screen, regardless of direction. */
     private fun buttonTopOnScreen(): Int =
-        overlayParams.y + if (stackAtBottom) frameHeight - mainSize else 0
+        overlayParams.y + if (stackAtBottom) overlayParams.height - mainSize else 0
 
-    /** Window-y bounds that keep the main button fully on screen. */
+    /** ✅ the window hugs the visible content — the empty frame no longer
+     *  exists, so touches around the bubble reach the app underneath. */
+    private fun contentHeight(): Int {
+        stackView.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        return stackView.measuredHeight + dpToPx(4)
+    }
+
+    /** Resize the window to fit content, keeping the main button pinned.
+     *  Position + size change in ONE transaction — no visible jump. */
+    private fun syncWindowSize() {
+        val oldH = overlayParams.height
+        val newH = contentHeight()
+        if (newH == oldH) return
+        if (stackAtBottom) overlayParams.y += oldH - newH
+        overlayParams.height = newH
+        overlayParams.y = clampWindowY(overlayParams.y)
+        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+    }
+
+    /** ✅ real system insets so the bubble stays clear of the status bar
+     *  (clock/battery) and the navigation bar */
+    private val topInset: Int
+        get() = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                windowManager.currentWindowMetrics.windowInsets
+                    .getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
+            } else dpToPx(28)
+        } catch (_: Exception) { dpToPx(28) }
+
+    private val bottomInset: Int
+        get() = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                windowManager.currentWindowMetrics.windowInsets
+                    .getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom
+            } else dpToPx(24)
+        } catch (_: Exception) { dpToPx(24) }
+
+    /** Window-y bounds that keep the main button fully on screen,
+     *  padded away from the status bar and navigation bar. */
     private fun clampWindowY(y: Int): Int {
-        val minY = if (stackAtBottom) -(frameHeight - mainSize) else 0
-        val maxY = if (stackAtBottom) screenHeight - frameHeight else screenHeight - mainSize
+        val h = overlayParams.height
+        val top = topInset + dpToPx(6)
+        val bottom = screenHeight - bottomInset - dpToPx(6)
+        val minY = if (stackAtBottom) top - (h - mainSize) else top
+        val maxY = if (stackAtBottom) bottom - h else bottom - mainSize
         return y.coerceIn(minY, maxY.coerceAtLeast(minY))
     }
 
@@ -146,13 +190,7 @@ class OverlayService : Service() {
 
     private fun themedPanel() = GradientDrawable().apply {
         cornerRadius = dpToPx(32).toFloat()   // pill ends match the 64dp circle
-        if (isDarkTheme) {
-            setColor(Color.parseColor("#661A1A1C"))
-            setStroke(dpToPx(1), Color.parseColor("#26FFFFFF"))
-        } else {
-            setColor(Color.parseColor("#80FFFFFF"))
-            setStroke(dpToPx(1), Color.parseColor("#14000000"))
-        }
+        setColor(ThemeHelper.overlayPanel(this@OverlayService))   // ✅ themed, borderless
     }
 
     /** Panel + growth-side padding only while more than the button is showing. */
@@ -255,9 +293,13 @@ class OverlayService : Service() {
         }
 
         overlayParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, frameHeight,
+            WindowManager.LayoutParams.WRAP_CONTENT, mainSize + dpToPx(4),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    // ✅ the tall frame may hang past the screen edge — without this,
+                    // the window manager blocked dragging the button to the bottom
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.END; x = edgePadding; y = dpToPx(80) }
 
@@ -295,13 +337,12 @@ class OverlayService : Service() {
      *  Pure integer math in ONE coordinate space — no correction needed. */
     private fun setDirectionUp(up: Boolean) {
         if (up == stackAtBottom) return
-        val btnTop = buttonTopOnScreen()
         stackAtBottom = up
         (stackView.layoutParams as FrameLayout.LayoutParams).gravity =
             (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
         applyChildOrder()
-        overlayParams.y = clampWindowY(btnTop - if (up) frameHeight - mainSize else 0)
-        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+        // window height equals content in both directions, so the button
+        // position is untouched by the flip itself
     }
 
     private fun maybeRestoreDirection() {
@@ -328,6 +369,9 @@ class OverlayService : Service() {
         val slide = dpToPx(14).toFloat() * (if (stackAtBottom) 1f else -1f)
         for (b in listOf(photoBtn, videoBtn)) {
             b.visibility = View.VISIBLE
+        }
+        syncWindowSize()   // ✅ grow the window (atomic with the y shift)
+        for (b in listOf(photoBtn, videoBtn)) {
             b.alpha = 0f
             b.translationY = slide
             b.animate().alpha(1f).translationY(0f)
@@ -340,6 +384,10 @@ class OverlayService : Service() {
 
     private fun collapseMenu() {
         if (!isExpanded) return
+        // ✅ locked while a check is in flight — capture in progress or
+        // the result pill still showing "..." (waiting for the API)
+        if (isProcessing) return
+        if (resultChip.visibility == View.VISIBLE && resultLabel.text == "...") return
         isExpanded = false
         // ✅ collapsing dismisses everything, answer included
         photoBtn.visibility = View.GONE
@@ -348,6 +396,7 @@ class OverlayService : Service() {
         mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
         mainButton.setGlyphTint(PURPLE)
         refreshPanel()
+        syncWindowSize()   // ✅ shrink back to just the visible content
         maybeRestoreDirection()
     }
 
@@ -396,10 +445,13 @@ class OverlayService : Service() {
                     val dy = event.rawY - touchY
                     if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
                         dragging = true
-                        mainHandler.postDelayed(showTrashRunnable, 300)
+                        // ✅ pickup feel: the stack lifts slightly under the finger
+                        stackView.animate().scaleX(1.03f).scaleY(1.03f).setDuration(110).start()
+                        v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                        mainHandler.postDelayed(showTrashRunnable, 150)
                     }
                     if (dragging) {
-                        overlayParams.x = (startX - dx).toInt().coerceAtLeast(0)
+                        overlayParams.x = (startX - dx).toInt()   // ✅ free follow, clamp on release
                         overlayParams.y = clampWindowY((startY + dy).toInt())
                         try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
                         setDeleteZoneHighlight(isNearTrash(event.rawX, event.rawY))
@@ -408,6 +460,7 @@ class OverlayService : Service() {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(showTrashRunnable)
+                    stackView.animate().scaleX(1f).scaleY(1f).setDuration(150).start()   // ✅ set down
                     if (dragging) {
                         val nearTrash = isNearTrash(event.rawX, event.rawY)
                         hideDeleteZone()
@@ -465,11 +518,12 @@ class OverlayService : Service() {
         if (startX == targetX && startY == targetY) return
 
         val speed = hypot(vx, vy)
-        val dur = (200 + (speed / 6000f) * 220).toLong().coerceIn(200L, 420L)
+        // ✅ gentler glide to the edge: longer travel, softer ease-out
+        val dur = (340 + (speed / 6000f) * 260).toLong().coerceIn(340L, 620L)
 
         xAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = dur
-            interpolator = DecelerateInterpolator(1.6f)
+            interpolator = DecelerateInterpolator(2.3f)
             addUpdateListener { a ->
                 val f = a.animatedValue as Float
                 overlayParams.x = (startX + (targetX - startX) * f).toInt()
@@ -496,9 +550,10 @@ class OverlayService : Service() {
         val nx = trashCx.coerceIn(left, right)
         val ny = trashCy.coerceIn(top, bottom)
         val rectDist = hypot(trashCx - nx, trashCy - ny)
-        val fingerDist = hypot(rawX - trashCx, rawY - trashCy)
 
-        return minOf(rectDist, fingerDist) < deleteProximity
+        // ✅ only the overlay itself being near the trash counts —
+        // finger position alone can no longer trigger a delete
+        return rectDist < deleteProximity
     }
 
     private fun showDeleteZone() {
@@ -575,6 +630,7 @@ class OverlayService : Service() {
             }
             resultChip.visibility = View.VISIBLE
             refreshPanel()
+            syncWindowSize()
             resultChip.alpha = 0f
             resultChip.translationY = dpToPx(10).toFloat() * (if (stackAtBottom) 1f else -1f)
             resultChip.animate().alpha(1f).translationY(0f)
@@ -591,6 +647,7 @@ class OverlayService : Service() {
                 videoBtn.visibility = View.GONE
             }
             refreshPanel()
+            syncWindowSize()
             maybeRestoreDirection()
         }
     }
@@ -600,11 +657,9 @@ class OverlayService : Service() {
             resultLabel.text = text
             val pct = text.replace("%", "").toIntOrNull() ?: 0
             val color = when {
-                text == "..." || text == "SEND" -> Color.GRAY
-                !text.endsWith("%") -> Color.DKGRAY
-                pct < 30 -> Color.parseColor("#4CAF50")
-                pct < 70 -> Color.parseColor("#FF9800")
-                else -> BRIGHT_RED
+                text == "..." || text == "SEND" -> ThemeHelper.idleGray(this)
+                !text.endsWith("%") -> ThemeHelper.btnNeutral(this)
+                else -> ThemeHelper.scoreColor(this, pct)   // ✅ themed scale
             }
             (resultChip.background as GradientDrawable).setColor(color)
         }
@@ -962,7 +1017,7 @@ class OverlayService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel("overlay_ch", "AI Tool", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel("overlay_ch", "OverlAI", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
@@ -976,10 +1031,10 @@ class OverlayService : Service() {
             PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(this, "overlay_ch")
-            .setContentTitle(if (recording) "overlAI — recording screen…" else "overlAI overlay is on")
+            .setContentTitle(if (recording) "OverlAI — recording screen…" else "OverlAI overlay is on")
             .setContentText(if (recording) "Tap the timer chip to stop" else "Tap to open the app")
             .setContentIntent(openIntent)
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setSmallIcon(R.drawable.ic_stat_logo)   // ✅ brand mark in the status bar
             .setOngoing(true)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Turn off", stopPendingIntent)
             .build()
