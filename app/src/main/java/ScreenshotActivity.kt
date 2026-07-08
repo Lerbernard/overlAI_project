@@ -57,7 +57,7 @@ class ScreenshotActivity : Activity() {
     }
 
     private fun loadScreenshotThenShowCropper() {
-        val inputFile = File(cacheDir, "input.png")
+        val inputFile = File(cacheDir, if (isQuick) "input_quick.png" else "input.png")
 
         if (!inputFile.exists() || inputFile.length() == 0L) {
             if (retryCount++ < MAX_FILE_RETRIES) {
@@ -175,7 +175,7 @@ class ScreenshotActivity : Activity() {
             val cropped = cropView?.getCroppedBitmap() ?: run {
                 notifyService("CROP_FAILED"); finish(); return
             }
-            val outputFile = File(cacheDir, "output.png")
+            val outputFile = File(cacheDir, if (isQuick) "output_quick.png" else "output.png")
             FileOutputStream(outputFile).use {
                 cropped.compress(Bitmap.CompressFormat.PNG, 100, it)
             }
@@ -187,8 +187,11 @@ class ScreenshotActivity : Activity() {
         finish()
     }
 
+    private val isQuick get() = intent.getStringExtra("TARGET") == "quick"
+
     private fun notifyService(action: String) {
-        startService(Intent(this, OverlayService::class.java).apply {
+        val target = if (isQuick) QuickShotService::class.java else OverlayService::class.java
+        startService(Intent(this, target).apply {
             putExtra("EXTRA_ACTION", action)
         })
     }
@@ -196,14 +199,23 @@ class ScreenshotActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_PROJECTION) {
+            val quick = intent.getStringExtra("TARGET") == "quick"
             if (resultCode == RESULT_OK && data != null) {
-                startService(Intent(this, OverlayService::class.java).apply {
-                    putExtra("RESULT_CODE", resultCode)
-                    putExtra("DATA", data)
-                    // ✅ pass the requested mode (photo / video) through to the service
-                    putExtra("MODE", intent.getStringExtra("MODE") ?: "photo")
-                })
-            } else {
+                if (quick) {
+                    // ✅ quick-check tile flow — its own lightweight service
+                    androidx.core.content.ContextCompat.startForegroundService(this,
+                        Intent(this, QuickShotService::class.java).apply {
+                            putExtra("RESULT_CODE", resultCode)
+                            putExtra("DATA", data)
+                        })
+                } else {
+                    startService(Intent(this, OverlayService::class.java).apply {
+                        putExtra("RESULT_CODE", resultCode)
+                        putExtra("DATA", data)
+                        putExtra("MODE", intent.getStringExtra("MODE") ?: "photo")
+                    })
+                }
+            } else if (!quick) {
                 notifyService("CAPTURE_DENIED")
             }
             finish()

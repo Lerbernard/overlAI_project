@@ -218,6 +218,7 @@ class OverlayService : Service() {
         OverlayTileService.refresh(this)
         OverlayWidgetProvider.updateAll(this)
         OverlayStatsWidget.updateAll(this)
+        mainHandler.postDelayed(autoOffCheck, 5 * 60_000L)
     }
 
     /** Foreground with the right type: specialUse while idle, +mediaProjection
@@ -305,6 +306,8 @@ class OverlayService : Service() {
 
         refreshPanel()
         makeDraggable()
+
+        resultChip.contentDescription = "Detection result — tap to dismiss"
 
         windowManager.addView(rootView, overlayParams)
     }
@@ -489,8 +492,27 @@ class OverlayService : Service() {
         }
     }
 
+    // ✅ double-tap the bubble = instant photo check; single tap = menu
+    private var pendingTap: Runnable? = null
+
+    private fun handleMainTap() {
+        val pending = pendingTap
+        if (pending != null) {
+            mainHandler.removeCallbacks(pending)
+            pendingTap = null
+            requestProjection(mode = "photo")
+        } else {
+            val r = Runnable {
+                pendingTap = null
+                if (isExpanded) collapseMenu() else expandMenu()
+            }
+            pendingTap = r
+            mainHandler.postDelayed(r, 250)
+        }
+    }
+
     private fun makeDraggable() {
-        attachDrag(mainButton) { if (isExpanded) collapseMenu() else expandMenu() }
+        attachDrag(mainButton) { handleMainTap() }
         attachDrag(photoBtn) { requestProjection(mode = "photo") }
         attachDrag(videoBtn) { requestProjection(mode = "video") }
         attachDrag(resultChip) { if (isRecording) stopRecording() else hideResultChip() }
@@ -669,8 +691,24 @@ class OverlayService : Service() {
     // Projection request (shared by photo + video)
     // ---------------------------------------------------------------------
 
+    // ✅ optional auto-off: stop after an hour without a check
+    private var lastUseMs = System.currentTimeMillis()
+    private val autoOffCheck = object : Runnable {
+        override fun run() {
+            val enabled = getSharedPreferences("app_settings", MODE_PRIVATE)
+                .getBoolean("auto_off", false)
+            if (enabled && !isRecording && !isProcessing &&
+                System.currentTimeMillis() - lastUseMs > 60 * 60_000L) {
+                stopSelf()
+                return
+            }
+            mainHandler.postDelayed(this, 5 * 60_000L)
+        }
+    }
+
     private fun requestProjection(mode: String) {
         if (isProcessing || isRecording) return
+        lastUseMs = System.currentTimeMillis()
         lastMode = mode
         hideResultChip()
         startActivity(Intent(this, ScreenshotActivity::class.java).apply {
@@ -1058,6 +1096,7 @@ class OverlayService : Service() {
             try { mediaRecorder?.stop() } catch (_: Exception) {}
             releaseRecorder()
         }
+        mainHandler.removeCallbacks(autoOffCheck)
         stopMediaProjection()
         hideDeleteZone()
         xAnimator?.cancel()

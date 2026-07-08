@@ -22,7 +22,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.switchmaterial.SwitchMaterial
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -48,28 +47,64 @@ class MainActivity : AppCompatActivity() {
         val viewDetector   = findViewById<FrameLayout>(R.id.viewDetector)
         val viewHistory    = findViewById<LinearLayout>(R.id.viewHistory)
         val viewSettings   = findViewById<LinearLayout>(R.id.viewSettings)
-        val cropSwitch     = findViewById<SwitchMaterial>(R.id.crop_switch)
-        val darkModeSwitch = findViewById<SwitchMaterial>(R.id.dark_mode_switch)
 
         val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
-        cropSwitch.isChecked     = prefs.getBoolean("use_crop", true)
-        darkModeSwitch.isChecked = ThemeHelper.isDark(this)
+        // toggle labels are populated by refreshSettingsStatus()
 
         // ✅ bottom navigation, Proton-style: icon pill + label
         buildBottomNav()
         selectTab(prefs.getInt("restore_tab", 0))
         prefs.edit().remove("restore_tab").apply()
 
-        cropSwitch.setOnCheckedChangeListener { _, isChecked ->
-            prefs.edit().putBoolean("use_crop", isChecked).apply()
+        // ✅ quick-check notification deep-links straight to a tab
+        intent?.getIntExtra("open_tab", -1)?.takeIf { it in 0..3 }?.let { selectTab(it) }
+
+        // ✅ full walkthrough on first launch
+        if (!prefs.getBoolean("tutorial_done", false)) {
+            TutorialDialog.show(this) {
+                prefs.edit().putBoolean("tutorial_done", true).apply()
+            }
         }
 
-        darkModeSwitch.setOnCheckedChangeListener { _, isChecked ->
-            prefs.edit()
-                .putBoolean("dark_mode", isChecked)
-                .putInt("restore_tab", currentTab)
-                .apply()
-            recreate()
+        // ✅ flat pill toggles (label in the track, sliding knob)
+        findViewById<PillToggleView>(R.id.cropSwitch)?.apply {
+            configure("ON", "OFF")
+            onToggle = { checked -> prefs.edit().putBoolean("use_crop", checked).apply() }
+        }
+
+        findViewById<PillToggleView>(R.id.autoOffSwitch)?.apply {
+            configure("ON", "OFF")
+            onToggle = { checked -> prefs.edit().putBoolean("auto_off", checked).apply() }
+        }
+
+        findViewById<PillToggleView>(R.id.themeSwitch)?.apply {
+            configure("DARK", "LIGHT", "\u263E", "\u2600")
+            onToggle = { checked ->
+                // ✅ only recreate on a REAL change — this is what caused the
+                // infinite relaunch loop before
+                if (checked != ThemeHelper.isDark(this@MainActivity)) {
+                    prefs.edit()
+                        .putBoolean("dark_mode", checked)
+                        .putInt("restore_tab", currentTab)
+                        .apply()
+                    recreate()
+                }
+            }
+        }
+
+        // ✅ sync the icon pref with the ACTUAL enabled alias, then wire the preview
+        try {
+            val state = packageManager.getComponentEnabledSetting(
+                android.content.ComponentName(this, "com.example.test103.LauncherLight"))
+            prefs.edit().putBoolean("icon_light",
+                state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED).apply()
+        } catch (_: Exception) {}
+
+        findViewById<ImageView>(R.id.iconPreview)?.setOnClickListener {
+            val toLight = !prefs.getBoolean("icon_light", false)
+            prefs.edit().putBoolean("icon_light", toLight).apply()
+            applyLauncherIcon(toLight)
+            refreshSettingsStatus()
         }
 
         findViewById<TextView>(R.id.btnClearHistory).setOnClickListener {
@@ -100,6 +135,41 @@ class MainActivity : AppCompatActivity() {
         list.removeAllViews()
 
         val entries = HistoryManager.getAll(this)
+
+        // ✅ friendly empty state
+        if (entries.isEmpty()) {
+            list.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(0, dp(90), 0, 0)
+                addView(ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_nav_history)
+                    setColorFilter(ThemeHelper.textSecondary(this@MainActivity))
+                    layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = "No checks yet"
+                    textSize = 18f
+                    gravity = Gravity.CENTER
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(ThemeHelper.textPrimary(this@MainActivity))
+                    setPadding(0, dp(16), 0, 0)
+                }, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT))
+                addView(TextView(this@MainActivity).apply {
+                    text = "Results from the overlay, Detector,\nshares and quick checks land here"
+                    textSize = 14f
+                    gravity = Gravity.CENTER
+                    setTextColor(ThemeHelper.textSecondary(this@MainActivity))
+                    setPadding(0, dp(6), 0, 0)
+                })
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT))   // ✅ full width → truly centered
+            return
+        }
+
         val dayKeyFmt = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
         val dayLabelFmt = SimpleDateFormat("MMMM d", Locale.getDefault())
         val todayKey = dayKeyFmt.format(Date())
@@ -157,7 +227,7 @@ class MainActivity : AppCompatActivity() {
                     cornerRadius = dp(10).toFloat()
                     setColor(ThemeHelper.divider(this@MainActivity))
                 }
-                val bmp: Bitmap? = e.thumbPath?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+                val bmp: Bitmap? = e.thumbPath?.let { decodeSampled(it, dp(56)) }   // ✅ sampled
                 if (bmp != null) setImageBitmap(bmp)
             }
             row.addView(thumb)
@@ -218,6 +288,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Popup with the enlarged image, score, verdict, source and date. */
+    /** ✅ decode a thumbnail no larger than needed — keeps History smooth */
+    private fun decodeSampled(path: String, targetPx: Int): Bitmap? = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= targetPx &&
+               bounds.outHeight / (sample * 2) >= targetPx) sample *= 2
+        BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+    } catch (e: Exception) { null }
+
     private fun showHistoryDialog(e: HistoryManager.Entry) {
         val t = ThemeHelper
         val dateFmt = SimpleDateFormat("MMM d, yyyy · HH:mm", Locale.getDefault())
@@ -270,19 +350,21 @@ class MainActivity : AppCompatActivity() {
 
         val dialog = android.app.AlertDialog.Builder(this)
             .setView(container)
-            .setPositiveButton("Close", null)
-            .setNegativeButton("Delete") { _, _ ->
+            .setPositiveButton("Delete") { _, _ ->
                 HistoryManager.remove(this, e.timestamp)
                 refreshHistory()
             }
+            .setNegativeButton("Close", null)
+            .setNeutralButton("Share") { _, _ -> shareEntry(e) }
             .create()
         dialog.show()
         dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
             cornerRadius = dp(22).toFloat()
             setColor(t.card(this@MainActivity))
         })
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(t.primary(this))
-        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(ThemeHelper.scoreHigh(this@MainActivity))
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(ThemeHelper.scoreHigh(this@MainActivity))   // Delete — red, rightmost
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(t.primary(this))
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)?.setTextColor(t.primary(this))
     }
 
     /** Fullscreen picture viewer — tap anywhere to close. */
@@ -375,6 +457,7 @@ class MainActivity : AppCompatActivity() {
             }
             val icon = ImageView(this).apply {
                 setImageResource(iconRes)
+                contentDescription = label
                 layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
             }
             pill.addView(icon)
@@ -460,8 +543,169 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** ✅ About card: version + tutorial replay */
+    private fun setupAboutCard() {
+        val version = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: Exception) { "?" }
+        findViewById<TextView>(R.id.aboutVersion)?.apply {
+            text = "OverlAI v$version"
+            setTextColor(ThemeHelper.textPrimary(this@MainActivity))
+        }
+        findViewById<TextView>(R.id.btnTerms)?.apply {
+            setTextColor(ThemeHelper.primary(this@MainActivity))
+            setOnClickListener { showLegalDialog("Terms of Use", TERMS_TEXT) }
+        }
+        findViewById<TextView>(R.id.btnPrivacy)?.apply {
+            setTextColor(ThemeHelper.primary(this@MainActivity))
+            setOnClickListener { showLegalDialog("Privacy Policy", PRIVACY_TEXT) }
+        }
+        findViewById<TextView>(R.id.btnTutorial)?.apply {
+            setTextColor(ThemeHelper.primary(this@MainActivity))
+            setOnClickListener { TutorialDialog.show(this@MainActivity) }
+        }
+    }
+
+    /** ✅ scrollable popup for Terms / Privacy */
+    private fun showLegalDialog(title: String, body: String) {
+        val t = ThemeHelper
+        val scroll = android.widget.ScrollView(this).apply {
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(22), dp(20), dp(22), dp(8))
+                addView(TextView(this@MainActivity).apply {
+                    text = title
+                    textSize = 19f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(t.textPrimary(this@MainActivity))
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = body
+                    textSize = 14f
+                    setLineSpacing(dp(3).toFloat(), 1f)
+                    setTextColor(t.textSecondary(this@MainActivity))
+                    setPadding(0, dp(12), 0, 0)
+                })
+            })
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setView(scroll)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
+            cornerRadius = dp(22).toFloat()
+            setColor(t.card(this@MainActivity))
+        })
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+            ?.setTextColor(t.primary(this))
+    }
+
+    companion object {
+        private const val PRIVACY_TEXT = """When you check an image or video, that media is uploaded to Sightengine, a third-party detection service, for analysis. Sightengine's own privacy policy applies to that processing.
+
+What stays on your device: detection results, thumbnails in your History, and monthly usage counters. OverlAI has no accounts, no analytics, and no ads — nothing else leaves your phone.
+
+Screen capture only happens when you trigger it, and Android asks for your consent each time. The overlay permission is used solely to draw the floating bubble.
+
+You can delete individual results from History at any time, or remove everything by clearing the app's data or uninstalling. Notifications are used only for overlay status and quick-check results, and can be disabled in system settings."""
+
+        private const val TERMS_TEXT = """OverlAI is provided as-is, without warranties of any kind.
+
+Detection results are probabilistic estimates produced by a third-party AI model. They can be wrong in both directions and must not be treated as proof that content is or is not AI-generated. Do not rely on them for legal, journalistic, or other critical decisions.
+
+You are responsible for the content you capture and submit, including respecting other people's rights and privacy when checking material that isn't yours. You agree not to use the app to harass others or to conduct unlawful surveillance.
+
+Detection depends on an external service and may be unavailable, rate-limited, or changed at any time. The developer is not liable for any damages arising from use of the app or reliance on its results.
+
+These terms may be updated as the app evolves; continued use means acceptance of the current version."""
+    }
+
+    /** ✅ share a history entry's image via the system share sheet */
+    private fun shareEntry(e: HistoryManager.Entry) {
+        val path = e.thumbPath
+        if (path == null) {
+            Toast.makeText(this, "No image stored for this entry", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "${BuildConfig.APPLICATION_ID}.fileprovider", java.io.File(path))
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "image/jpeg"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, "AI likelihood: ${e.score}% — checked with OverlAI")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, "Share result"))
+        } catch (ex: Exception) {
+            Toast.makeText(this, "Couldn't share this image", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** ✅ sync the pill toggles + launcher-icon preview */
+    private fun refreshSettingsStatus() {
+        val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+
+        findViewById<PillToggleView>(R.id.cropSwitch)?.apply {
+            setChecked(prefs.getBoolean("use_crop", true))
+            applyThemeColors()
+        }
+        findViewById<PillToggleView>(R.id.autoOffSwitch)?.apply {
+            setChecked(prefs.getBoolean("auto_off", false))
+            applyThemeColors()
+        }
+        findViewById<PillToggleView>(R.id.themeSwitch)?.apply {
+            setChecked(ThemeHelper.isDark(this@MainActivity))
+            applyThemeColors()
+        }
+
+        val light = prefs.getBoolean("icon_light", false)
+        findViewById<ImageView>(R.id.iconPreview)?.setImageDrawable(iconPreviewDrawable(light))
+    }
+
+    private fun iconPreviewDrawable(light: Boolean): android.graphics.drawable.Drawable {
+        val bg = GradientDrawable().apply {
+            cornerRadius = dp(12).toFloat()
+            setColor(if (light) Color.WHITE else Color.parseColor("#0E0E10"))
+            if (light) setStroke(dp(1), Color.parseColor("#33000000"))
+        }
+        val mark = androidx.core.content.ContextCompat.getDrawable(this,
+            if (light) R.drawable.ic_nav_logo_light else R.drawable.ic_nav_logo)!!.mutate()
+        val layer = android.graphics.drawable.LayerDrawable(arrayOf(bg, mark))
+        val inset = dp(9)
+        layer.setLayerInset(1, inset, inset, inset, inset)
+        return layer
+    }
+
+    /** ✅ swap the launcher (and Android 12+ splash) icon via activity aliases */
+    private fun applyLauncherIcon(light: Boolean) {
+        val pm = packageManager
+        val dark = android.content.ComponentName(this, "com.example.test103.LauncherDark")
+        val lightC = android.content.ComponentName(this, "com.example.test103.LauncherLight")
+        try {
+            pm.setComponentEnabledSetting(if (light) lightC else dark,
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP)
+            pm.setComponentEnabledSetting(if (light) dark else lightC,
+                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP)
+            Toast.makeText(this,
+                "Icon updated — your launcher may take a moment", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Couldn't switch the icon", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getIntExtra("open_tab", -1).takeIf { it in 0..3 }?.let { selectTab(it) }
+    }
+
     override fun onResume() {
         super.onResume()
+        setupAboutCard()
+        refreshSettingsStatus()
         refreshUsage()
         refreshDashboard()
     }
@@ -472,6 +716,9 @@ class MainActivity : AppCompatActivity() {
         val on = OverlayService.isRunning
         // ✅ the logo IS the status light: full color when on, gray when off
         findViewById<ImageView>(R.id.dashLogo)?.apply {
+            // ✅ dot color follows the theme: white dots in dark, black in light
+            setImageResource(if (ThemeHelper.isDark(this@MainActivity))
+                R.drawable.ic_nav_logo else R.drawable.ic_nav_logo_light)
             if (on) {
                 clearColorFilter()
                 alpha = 1f

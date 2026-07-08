@@ -40,12 +40,13 @@ object DetectionClient {
     }
 
     fun detectImage(context: Context, file: File,
-                    onResult: (Int) -> Unit, onError: (String) -> Unit) {
+                    onResult: (Int) -> Unit, onError: (String) -> Unit,
+                    skipCache: Boolean = false) {
         val app = context.applicationContext
 
         // ✅ cache first: same image = same answer, zero quota
         val hash = UsageTracker.md5(file)
-        if (hash != null) {
+        if (hash != null && !skipCache) {
             UsageTracker.cachedScore(app, hash)?.let { cached ->
                 main.post { onResult(cached) }
                 return

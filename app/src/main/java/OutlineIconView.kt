@@ -31,7 +31,18 @@ class OutlineIconView(
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
-    init { refreshColors() }
+    init {
+        refreshColors()
+        contentDescription = descFor(mode)   // ✅ TalkBack support
+    }
+
+    private fun descFor(m: Mode) = when (m) {
+        Mode.PLUS -> "Open OverlAI menu"
+        Mode.CLOSE -> "Close menu"
+        Mode.PHOTO -> "Check a photo"
+        Mode.VIDEO -> "Record and check video"
+        Mode.TRASH -> "Remove overlay"
+    }
 
     fun applyTheme(isDark: Boolean) {
         dark = isDark
@@ -63,6 +74,7 @@ class OutlineIconView(
 
     fun setModeAndRedraw(m: Mode) {
         mode = m
+        contentDescription = descFor(m)
         invalidate()
     }
 

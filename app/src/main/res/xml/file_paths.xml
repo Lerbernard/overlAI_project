@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- res/xml/file_paths.xml : lets the share sheet read history thumbnails -->
+<paths>
+    <files-path name="history" path="history/" />
+    <cache-path name="cache" path="." />
+</paths>

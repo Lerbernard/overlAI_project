@@ -86,6 +86,18 @@ class ShareDetectActivity : Activity() {
             fail("Video too large — try a clip under ~30s")
             return
         }
+        // ✅ duration guard, clearer than a server error
+        val durationMs = try {
+            val r = MediaMetadataRetriever()
+            r.setDataSource(file.absolutePath)
+            val d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            r.release()
+            d
+        } catch (_: Exception) { 0L }
+        if (durationMs > 31_000L) {
+            fail("Video too long — try a clip under 30 seconds")
+            return
+        }
 
         var frame: Bitmap? = null
         try {

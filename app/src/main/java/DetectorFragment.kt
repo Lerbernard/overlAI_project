@@ -157,6 +157,20 @@ class DetectorFragment : Fragment() {
             showMessage("Couldn't read the file"); return
         }
 
+        // ✅ duration guard: the sync endpoint only handles short clips
+        val durationMs = try {
+            val r = MediaMetadataRetriever()
+            r.setDataSource(file.absolutePath)
+            val d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            r.release()
+            d
+        } catch (_: Exception) { 0L }
+        if (durationMs > 31_000L) {
+            file.delete()
+            showMessage("Video too long — try a clip under 30 seconds")
+            return
+        }
+
         var frame: Bitmap? = null
         try {
             val r = MediaMetadataRetriever()

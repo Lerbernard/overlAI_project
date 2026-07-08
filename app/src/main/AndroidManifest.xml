@@ -112,6 +112,37 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_stats_info" />
         </receiver>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+        <service
+            android:name=".QuickShotService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="One-tap screenshot AI check from quick settings" />
+        </service>
+
+        <service
+            android:name=".QuickCheckTile"
+            android:exported="true"
+            android:icon="@drawable/ic_nav_detector"
+            android:label="Quick check"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+
 
     </application>
 </manifest>
