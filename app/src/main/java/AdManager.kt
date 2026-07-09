@@ -12,7 +12,7 @@ import com.google.android.gms.ads.MobileAds
 /**
  * ✅ Thin wrapper around the Google Mobile Ads SDK.
  *
- * IMPORTANT: these are Google's official TEST ad unit IDs — they show test
+ * IMPORTANT: these are Google's official TEST ad unit IDs - they show test
  * ads and are safe during development. Before publishing, replace TEST_BANNER
  * with your real AdMob banner unit ID (and put the real App ID in the manifest
  * meta-data). Never click your own live ads.
@@ -41,7 +41,7 @@ object AdManager {
     }
 
     /**
-     * Fill [container] with an adaptive banner — unless the user is premium,
+     * Fill [container] with an adaptive banner - unless the user is premium,
      * in which case the container is emptied and hidden.
      */
     /** Preload an interstitial so it's ready to show later. */
@@ -63,7 +63,7 @@ object AdManager {
     }
 
     /**
-     * Show an interstitial after a detection — but only every 3rd check, so
+     * Show an interstitial after a detection - but only every 3rd check, so
      * users aren't hit with a full-screen ad every single time. No-op for premium.
      */
     fun maybeShowAfterCheck(activity: android.app.Activity) {

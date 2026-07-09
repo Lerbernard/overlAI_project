@@ -82,7 +82,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<PillToggleView>(R.id.themeSwitch)?.apply {
             configure("DARK", "LIGHT")
             onToggle = { checked ->
-                // ✅ only recreate on a REAL change — this is what caused the
+                // ✅ only recreate on a REAL change - this is what caused the
                 // infinite relaunch loop before
                 if (checked != ThemeHelper.isDark(this@MainActivity)) {
                     prefs.edit()
@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---------------------------------------------------------------------
-    // History tab — minimalist rows built in code
+    // History tab - minimalist rows built in code
     // ---------------------------------------------------------------------
 
     private fun refreshHistory() {
@@ -297,7 +297,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Popup with the enlarged image, score, verdict, source and date. */
-    /** ✅ decode a thumbnail no larger than needed — keeps History smooth */
+    /** ✅ decode a thumbnail no larger than needed - keeps History smooth */
     private fun decodeSampled(path: String, targetPx: Int): Bitmap? = try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
@@ -371,12 +371,12 @@ class MainActivity : AppCompatActivity() {
             cornerRadius = dp(22).toFloat()
             setColor(t.card(this@MainActivity))
         })
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(ThemeHelper.scoreHigh(this@MainActivity))   // Delete — red, rightmost
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(ThemeHelper.scoreHigh(this@MainActivity))   // Delete - red, rightmost
         dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(t.primary(this))
         dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)?.setTextColor(t.primary(this))
     }
 
-    /** Fullscreen picture viewer — tap anywhere to close. */
+    /** Fullscreen picture viewer - tap anywhere to close. */
     private fun showFullImage(path: String) {
         val bmp = runCatching { BitmapFactory.decodeFile(path) }.getOrNull() ?: return
         val d = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
@@ -522,6 +522,7 @@ class MainActivity : AppCompatActivity() {
                 .commit()
         }
         if (index == 2) refreshHistory()
+        if (index == 3) { setupAccountCard(); setupPremiumCard(); setupAboutCard() }
 
         getSharedPreferences("app_settings", MODE_PRIVATE)
             .edit().putInt("restore_tab", index).apply()
@@ -594,15 +595,33 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // premium-gated "Add Quick check tile"
         val premium = Premium.isActive(this)
-        findViewById<TextView>(R.id.tileRowSub)?.apply {
-            text = if (premium) "Adds the tile to Quick Settings"
-                   else "Screenshot → check, from Quick Settings"
+        bindTileRow(R.id.overlayTileSub, R.id.btnAddOverlayTile, R.id.overlayProBadge,
+            premium, "tile_added_overlay", "Toggle the overlay from Quick Settings",
+            "OverlayTileService", "OverlAI", R.drawable.ic_tile)
+        bindTileRow(R.id.tileRowSub, R.id.btnAddTile, R.id.tileProBadge,
+            premium, "tile_added_quick", "Screenshot and check from Quick Settings",
+            "QuickCheckTile", "Quick check", R.drawable.ic_nav_detector)
+    }
+
+    /** ✅ one tile row: purple Add when unlocked, grey + PRO when locked. */
+    private fun bindTileRow(subId: Int, btnId: Int, badgeId: Int, premium: Boolean,
+                            addedKey: String, lockedSub: String,
+                            serviceClass: String, tileLabel: String, tileIcon: Int) {
+        val t = ThemeHelper
+        findViewById<TextView>(subId)?.apply {
+            text = lockedSub
             setTextColor(t.textSecondary(this@MainActivity))
         }
-        // ✅ same purple button as the others; greyed (not tappable to enable) when locked
-        findViewById<TextView>(R.id.btnAddTile)?.apply {
+        findViewById<TextView>(badgeId)?.apply {
+            visibility = if (premium) View.GONE else View.VISIBLE
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(6).toFloat()
+                setColor(t.primary(this@MainActivity))
+            }
+        }
+        findViewById<TextView>(btnId)?.apply {
             text = "Add"
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
@@ -611,17 +630,22 @@ class MainActivity : AppCompatActivity() {
             }
             setOnClickListener {
                 if (!premium) { showPremiumDialog(); return@setOnClickListener }
-                requestAddQuickTile()
+                requestAddTile(serviceClass, tileLabel, tileIcon)
             }
         }
-        // ✅ PRO badge visible only when locked
-        findViewById<TextView>(R.id.tileProBadge)?.apply {
-            visibility = if (premium) View.GONE else View.VISIBLE
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(6).toFloat()
-                setColor(t.primary(this@MainActivity))
-            }
+    }
+
+    private fun requestAddTile(serviceClass: String, label: String, icon: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val sm = getSystemService(android.app.StatusBarManager::class.java)
+            sm.requestAddTileService(
+                android.content.ComponentName(this, "com.example.test103.$serviceClass"),
+                label,
+                android.graphics.drawable.Icon.createWithResource(this, icon), {}, {})
+        } else {
+            Toast.makeText(this,
+                "Pull down Quick Settings, tap edit, and drag in the $label tile.",
+                Toast.LENGTH_LONG).show()
         }
     }
 
@@ -644,22 +668,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    /** ✅ ask the system to add the Quick check tile (Android 13+). */
-    private fun requestAddQuickTile() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val sm = getSystemService(android.app.StatusBarManager::class.java)
-            sm.requestAddTileService(
-                android.content.ComponentName(this, "com.example.test103.QuickCheckTile"),
-                "Quick check",
-                android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_nav_detector),
-                {}, {})
-        } else {
-            Toast.makeText(this,
-                "Pull down Quick Settings, tap edit, and drag in the Quick check tile.",
-                Toast.LENGTH_LONG).show()
-        }
-    }
-
     private fun setupPremiumCard() {
         val t = ThemeHelper
         val premium = Premium.isActive(this)
@@ -667,7 +675,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.premiumTitle)?.setTextColor(t.textPrimary(this))
         findViewById<TextView>(R.id.premiumBody)?.apply {
             setTextColor(t.textSecondary(this@MainActivity))
-            text = if (premium) "Premium active — ads are off. Thank you!"
+            text = if (premium) "Premium active - ads are off. Thank you!"
                    else "Remove ads and support development."
         }
         findViewById<TextView>(R.id.btnPremium)?.apply {
@@ -679,7 +687,7 @@ class MainActivity : AppCompatActivity() {
                     setColor(Color.argb(20, 136, 136, 136))
                 }
             } else {
-                text = "Remove ads — $2.99/mo"
+                text = "Remove ads - $2.99/mo"
                 setTextColor(Color.WHITE)
                 background = GradientDrawable().apply {
                     cornerRadius = dp(20).toFloat()
@@ -690,7 +698,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** ✅ placeholder purchase flow — Play Billing slots in here later. */
+    /** ✅ placeholder purchase flow - Play Billing slots in here later. */
     private fun showPremiumDialog() {
         val premium = Premium.isActive(this)
         if (premium) {
@@ -706,10 +714,10 @@ class MainActivity : AppCompatActivity() {
         }
         android.app.AlertDialog.Builder(this)
             .setTitle("Remove ads")
-            .setMessage("This will be a $2.99/month subscription through Google Play. Billing isn't wired up yet — for now this unlocks premium locally so you can preview the ad-free experience.")
+            .setMessage("This will be a $2.99/month subscription through Google Play. Billing isn't wired up yet - for now this unlocks premium locally so you can preview the ad-free experience.")
             .setPositiveButton("Unlock (test)") { _, _ ->
                 Premium.setPremiumSynced(this, true)
-                Toast.makeText(this, "Premium unlocked — ads removed", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Premium unlocked - ads removed", Toast.LENGTH_SHORT).show()
                 refreshPremium()
             }
             .setNegativeButton("Cancel", null)
@@ -718,6 +726,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshPremium() {
         setupPremiumCard()
+        setupAccountCard()
         // reflect immediately if the detector is live
         (supportFragmentManager.findFragmentById(R.id.viewDetector) as? DetectorFragment)?.let {
             it.view?.findViewById<FrameLayout>(R.id.adContainer)?.let { c -> AdManager.loadBanner(c) }
@@ -784,7 +793,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val PRIVACY_TEXT = """When you check an image or video, that media is uploaded to Sightengine, a third-party detection service, for analysis. Sightengine's own privacy policy applies to that processing.
 
-What stays on your device: detection results, thumbnails in your History, and monthly usage counters. OverlAI has no accounts, no analytics, and no ads — nothing else leaves your phone.
+What stays on your device: detection results, thumbnails in your History, and monthly usage counters. OverlAI has no accounts, no analytics, and no ads - nothing else leaves your phone.
 
 Screen capture only happens when you trigger it, and Android asks for your consent each time. The overlay permission is used solely to draw the floating bubble.
 
@@ -814,7 +823,7 @@ These terms may be updated as the app evolves; continued use means acceptance of
             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                 type = "image/jpeg"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_TEXT, "AI likelihood: ${e.score}% — checked with OverlAI")
+                putExtra(Intent.EXTRA_TEXT, "AI likelihood: ${e.score}% - checked with OverlAI")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }, "Share result"))
         } catch (ex: Exception) {
@@ -872,7 +881,7 @@ These terms may be updated as the app evolves; continued use means acceptance of
                 android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 android.content.pm.PackageManager.DONT_KILL_APP)
             Toast.makeText(this,
-                "Icon updated — your launcher may take a moment", Toast.LENGTH_SHORT).show()
+                "Icon updated - your launcher may take a moment", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Couldn't switch the icon", Toast.LENGTH_SHORT).show()
         }
@@ -894,7 +903,7 @@ These terms may be updated as the app evolves; continued use means acceptance of
         refreshDashboard()
     }
 
-    /** ✅ Overlay tab: minimal centered hero — ring, state, button. */
+    /** ✅ Overlay tab: minimal centered hero - ring, state, button. */
     private fun refreshDashboard() {
         val t = ThemeHelper
         val on = OverlayService.isRunning
@@ -949,7 +958,7 @@ These terms may be updated as the app evolves; continued use means acceptance of
             setTextColor(t.textPrimary(this@MainActivity))
         })
         box.addView(TextView(this).apply {
-            text = "OverlAI draws a small floating button over other apps so you can check images anywhere. Android will ask you to allow \"display over other apps\" — flip the switch for OverlAI, then come back and tap Activate again."
+            text = "OverlAI draws a small floating button over other apps so you can check images anywhere. Android will ask you to allow \"display over other apps\" - flip the switch for OverlAI, then come back and tap Activate again."
             textSize = 14f
             setTextColor(t.textSecondary(this@MainActivity))
             setPadding(0, dp(10), 0, 0)

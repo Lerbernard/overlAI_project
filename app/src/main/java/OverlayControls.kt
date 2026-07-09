@@ -32,6 +32,18 @@ class OverlayTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
+        // ✅ premium tile — free users open the overlay from inside the app
+        if (!Premium.isActive(this)) {
+            val open = PendingIntent.getActivity(this, 11,
+                Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra("open_tab", 3)
+                }, PendingIntent.FLAG_IMMUTABLE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+                startActivityAndCollapse(open)
+            else try { open.send() } catch (_: Exception) {}
+            return
+        }
         if (OverlayService.isRunning) {
             stopService(Intent(this, OverlayService::class.java))
         } else if (Settings.canDrawOverlays(this)) {

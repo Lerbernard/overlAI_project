@@ -24,8 +24,8 @@ import java.io.FileOutputStream
  * for the overlay flow), this is a normal activity so startActivityForResult
  * works from fragments.
  *
- *   EXTRA_INPUT  — absolute path of the image to crop
- *   EXTRA_OUTPUT — absolute path to write the cropped PNG
+ *   EXTRA_INPUT  - absolute path of the image to crop
+ *   EXTRA_OUTPUT - absolute path to write the cropped PNG
  *   Result: RESULT_OK when cropped, RESULT_CANCELED otherwise.
  */
 class CropActivity : Activity() {

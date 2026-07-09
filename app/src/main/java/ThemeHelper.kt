@@ -93,18 +93,16 @@ object ThemeHelper {
 
     // ─── Apply to settings cards ──────────────────────────────────────────────
 
-    fun applyCardTheme(settingsLayout: LinearLayout, context: Context) {
-        for (i in 0 until settingsLayout.childCount) {
-            val child = settingsLayout.getChildAt(i)
-            if (child is MaterialCardView) {
-                child.setCardBackgroundColor(card(context))
-                val inner = child.getChildAt(0)
-                if (inner is LinearLayout) {
-                    for (j in 0 until inner.childCount) {
-                        val v = inner.getChildAt(j)
-                        if (v is TextView) v.setTextColor(textPrimary(context))
-                    }
-                }
+    fun applyCardTheme(root: android.view.View, context: Context) {
+        // ✅ recurse: cards may sit inside a ScrollView/wrapper, not just as
+        // direct children, so walk the whole subtree.
+        when (root) {
+            is MaterialCardView -> {
+                root.setCardBackgroundColor(card(context))
+                for (k in 0 until root.childCount) applyCardTheme(root.getChildAt(k), context)
+            }
+            is android.view.ViewGroup -> {
+                for (k in 0 until root.childCount) applyCardTheme(root.getChildAt(k), context)
             }
         }
     }

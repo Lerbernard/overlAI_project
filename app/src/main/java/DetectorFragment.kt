@@ -86,7 +86,7 @@ class DetectorFragment : Fragment() {
 
         previewImage.setOnClickListener { showFullPreview() }
 
-        // ✅ let the pulsing badge draw outside its bounds — no more clipping
+        // ✅ let the pulsing badge draw outside its bounds - no more clipping
         emptyState.clipChildren = false
         emptyState.clipToPadding = false
 
@@ -169,7 +169,7 @@ class DetectorFragment : Fragment() {
         } catch (_: Exception) { 0L }
         if (durationMs > 31_000L) {
             file.delete()
-            showMessage("Video too long — try a clip under 30 seconds")
+            showMessage("Video too long - try a clip under 30 seconds")
             return
         }
 
@@ -423,7 +423,7 @@ class DetectorFragment : Fragment() {
             setColor(Color.TRANSPARENT)
             setStroke(dp(2), t.primary(ctx))
         }
-        // ✅ teal plus badge on the purple lens — both brand colors
+        // ✅ teal plus badge on the purple lens - both brand colors
         root.findViewById<TextView>(R.id.plusBadge)?.apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL

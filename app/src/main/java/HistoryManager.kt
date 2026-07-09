@@ -10,7 +10,7 @@ import java.io.FileOutputStream
 /**
  * Simple detection-history store. Entries live as a JSON array in
  * SharedPreferences; thumbnails are small JPEGs in filesDir/history/.
- * Capped at MAX_ENTRIES — oldest entries (and their thumbnails) are pruned.
+ * Capped at MAX_ENTRIES - oldest entries (and their thumbnails) are pruned.
  */
 object HistoryManager {
 

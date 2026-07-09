@@ -32,10 +32,10 @@ object DetectionClient {
 
     /** ✅ one place that turns HTTP codes into words a person understands */
     private fun humanError(code: Int): String = when (code) {
-        400 -> "Request rejected — check your API keys"
+        400 -> "Request rejected - check your API keys"
         401, 403 -> "API keys invalid or missing"
         429 -> "Monthly API quota reached"
-        in 500..599 -> "Detection service is down — try later"
+        in 500..599 -> "Detection service is down - try later"
         else -> "Detection service error ($code)"
     }
 

@@ -168,7 +168,7 @@ class CropView(context: Context, private val bitmap: Bitmap) : View(context) {
         }
     }
 
-    /** One clamp to rule them all — explicit, no defaults, no shadowed names. */
+    /** One clamp to rule them all - explicit, no defaults, no shadowed names. */
     private fun clampCrop() {
         val il = imageRect.left
         val it = imageRect.top
