@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<PillToggleView>(R.id.themeSwitch)?.apply {
-            configure("DARK", "LIGHT", "\u263E", "\u2600")
+            configure("DARK", "LIGHT")
             onToggle = { checked ->
                 // ✅ only recreate on a REAL change — this is what caused the
                 // infinite relaunch loop before
@@ -294,7 +294,7 @@ class MainActivity : AppCompatActivity() {
         BitmapFactory.decodeFile(path, bounds)
         var sample = 1
         while (bounds.outWidth / (sample * 2) >= targetPx &&
-               bounds.outHeight / (sample * 2) >= targetPx) sample *= 2
+            bounds.outHeight / (sample * 2) >= targetPx) sample *= 2
         BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
     } catch (e: Exception) { null }
 

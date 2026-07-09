@@ -10,108 +10,97 @@ import android.widget.FrameLayout
 import android.widget.TextView
 
 /**
- * ✅ Flat (2D) labeled pill toggle: the label lives inside the track and a
- * round knob slides end to end — like a neumorphic theme switch, minus the 3D.
- * No saved instance state, so it can never re-fire listeners after recreate().
+ * ✅ Flat labeled toggle (like the reference): a solid rounded track with BOTH
+ * options always visible, and a pill-shaped knob that slides over the active
+ * side and highlights its label. No saved state → can't re-fire after recreate().
  */
-class PillToggleView(context: Context) : FrameLayout(context) {
+class PillToggleView @JvmOverloads constructor(
+    context: Context,
+    attrs: android.util.AttributeSet? = null,
+    defStyle: Int = 0
+) : FrameLayout(context, attrs, defStyle) {
 
     private fun dp(v: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
-    private val trackW = dp(118)
-    private val trackH = dp(40)
-    private val knobSize = dp(30)
-    private val knobMargin = dp(5)
+    private val trackW = dp(150)
+    private val trackH = dp(42)
+    private val pad = dp(4)                       // gap between knob and track edge
+    private val knobW get() = (trackW - pad * 2) / 2   // knob covers exactly half
 
     private var labelOn = "ON"
     private var labelOff = "OFF"
-    private var glyphOn: String? = null
-    private var glyphOff: String? = null
 
     var isChecked = false
         private set
 
-    /** Called only for real user taps, never for programmatic changes. */
+    /** Fires only on real user taps. */
     var onToggle: ((Boolean) -> Unit)? = null
 
-    private val label = TextView(context).apply {
-        textSize = 11f
+    private fun sideLabel() = TextView(context).apply {
+        textSize = 12f
         setTypeface(null, Typeface.BOLD)
-        letterSpacing = 0.08f
+        letterSpacing = 0.03f
         maxLines = 1
         gravity = Gravity.CENTER
     }
+    private val leftLabel = sideLabel()
+    private val rightLabel = sideLabel()
 
-    private val knob = TextView(context).apply {
-        textSize = 13f
-        gravity = Gravity.CENTER
-        layoutParams = LayoutParams(knobSize, knobSize, Gravity.START or Gravity.CENTER_VERTICAL)
-            .apply { marginStart = knobMargin }
-    }
+    private val knob = TextView(context)
 
     init {
         layoutParams = LayoutParams(trackW, trackH)
-        addView(label, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        val half = LayoutParams(knobW, LayoutParams.MATCH_PARENT)
+        addView(leftLabel, LayoutParams(half.width, LayoutParams.MATCH_PARENT, Gravity.START or Gravity.CENTER_VERTICAL))
+        addView(rightLabel, LayoutParams(half.width, LayoutParams.MATCH_PARENT, Gravity.END or Gravity.CENTER_VERTICAL))
+        knob.layoutParams = LayoutParams(knobW, trackH - pad * 2,
+            Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = pad }
         addView(knob)
         isClickable = true
         setOnClickListener {
             setChecked(!isChecked, animate = true)
             onToggle?.invoke(isChecked)
         }
-        render(animate = false)
+        render(false)
     }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        super.onMeasure(
-            MeasureSpec.makeMeasureSpec(trackW, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(trackH, MeasureSpec.EXACTLY))
-    }
+    override fun onMeasure(w: Int, h: Int) = super.onMeasure(
+        MeasureSpec.makeMeasureSpec(trackW, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(trackH, MeasureSpec.EXACTLY))
 
-    fun configure(on: String, off: String, gOn: String? = null, gOff: String? = null) {
-        labelOn = on; labelOff = off; glyphOn = gOn; glyphOff = gOff
-        render(animate = false)
-    }
+    fun configure(on: String, off: String) { labelOn = on; labelOff = off; render(false) }
 
-    /** Programmatic state set — never fires onToggle. */
-    fun setChecked(checked: Boolean, animate: Boolean = false) {
-        isChecked = checked
-        render(animate)
-    }
+    fun setChecked(checked: Boolean, animate: Boolean = false) { isChecked = checked; render(animate) }
 
-    /** Re-read theme colors (call from refresh passes). */
-    fun applyThemeColors() = render(animate = false)
+    fun applyThemeColors() = render(false)
 
     private fun render(animate: Boolean) {
         val t = ThemeHelper
         val active = t.primary(context)
-        val idle = t.idleGray(context)
-        val c = if (isChecked) active else idle
+        val trackCol = t.card(context)
+        val dim = t.textSecondary(context)
 
+        // solid track
         background = GradientDrawable().apply {
             cornerRadius = trackH / 2f
-            setColor(Color.argb(36, Color.red(c), Color.green(c), Color.blue(c)))
+            setColor(trackCol)
         }
 
-        label.text = if (isChecked) labelOn else labelOff
-        label.setTextColor(c)
-        // keep the label clear of whichever side the knob occupies
-        val clear = knobSize + knobMargin * 2
-        if (isChecked) label.setPadding(dp(8), 0, clear, 0)
-        else label.setPadding(clear, 0, dp(8), 0)
+        leftLabel.text = labelOff
+        rightLabel.text = labelOn
+        // the side under the knob is white; the other is dimmed
+        leftLabel.setTextColor(if (isChecked) dim else Color.WHITE)
+        rightLabel.setTextColor(if (isChecked) Color.WHITE else dim)
 
-        knob.text = (if (isChecked) glyphOn else glyphOff) ?: ""
-        knob.setTextColor(Color.WHITE)
+        // pill knob (rounded rect, not a circle) in the accent color
         knob.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(c)
+            cornerRadius = (trackH - pad * 2) / 2f
+            setColor(active)
         }
 
-        val target = if (isChecked) (trackW - knobSize - knobMargin * 2).toFloat() else 0f
-        if (animate) {
-            knob.animate().translationX(target).setDuration(170).start()
-        } else {
-            knob.translationX = target
-        }
+        val target = if (isChecked) (trackW - knobW - pad * 2).toFloat() else 0f
+        if (animate) knob.animate().translationX(target).setDuration(180).start()
+        else knob.translationX = target
     }
 }

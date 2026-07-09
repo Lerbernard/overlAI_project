@@ -230,10 +230,17 @@
                         android:textSize="16sp" />
 
                     <ImageView
-                        android:id="@+id/iconPreview"
-                        android:layout_width="46dp"
-                        android:layout_height="46dp"
-                        android:contentDescription="Tap to switch app icon" />
+                        android:id="@+id/iconDark"
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        android:layout_marginEnd="10dp"
+                        android:contentDescription="Dark app icon" />
+
+                    <ImageView
+                        android:id="@+id/iconLight"
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        android:contentDescription="Light app icon" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

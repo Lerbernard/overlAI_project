@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- res/drawable/ic_launcher_monochrome.xml : Material You themed icon -->
+<!-- res/drawable/ic_launcher_monochrome.xml
+     Material You fills this as ONE white silhouette, so it must read as a
+     single recognizable mark: a lens ring with a solid center dot, sized
+     inside the 66dp adaptive safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="7"
-        android:strokeLineCap="round" android:fillColor="#00000000"
-        android:pathData="M48.4,22.1 A32.4,32.4 0 0 1 80.6,72.6" />
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="7"
-        android:strokeLineCap="round" android:fillColor="#00000000"
-        android:pathData="M59.6,85.9 A32.4,32.4 0 0 1 27.4,35.4" />
+    <!-- ring: an annulus via even-odd (outer circle minus inner circle) -->
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M54,32
+                          a22,22 0 1 0 0.01,0 Z
+                          M54,41
+                          a13,13 0 1 1 -0.01,0 Z" />
+    <!-- solid center dot -->
     <path android:fillColor="#FFFFFFFF"
-        android:pathData="M36.6,26.7 m-5.8,0 a5.8,5.8 0 1 0 11.6,0 a5.8,5.8 0 1 0 -11.6,0" />
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M54,54 m-9.4,0 a9.4,9.4 0 1 0 18.8,0 a9.4,9.4 0 1 0 -18.8,0" />
+        android:pathData="M54,54 m-6,0 a6,6 0 1 0 12,0 a6,6 0 1 0 -12,0" />
 </vector>
