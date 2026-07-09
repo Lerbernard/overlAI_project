@@ -791,13 +791,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val PRIVACY_TEXT = """When you check an image or video, that media is uploaded to Sightengine, a third-party detection service, for analysis. Sightengine's own privacy policy applies to that processing.
+        private const val PRIVACY_TEXT = """Last updated: July 2026
 
-What stays on your device: detection results, thumbnails in your History, and monthly usage counters. OverlAI has no accounts, no analytics, and no ads - nothing else leaves your phone.
+WHAT WE COLLECT AND WHY
 
-Screen capture only happens when you trigger it, and Android asks for your consent each time. The overlay permission is used solely to draw the floating bubble.
+Images and videos you check: when you run a detection, that media is uploaded to Sightengine, a third-party detection service, and analyzed there. Sightengine's own privacy policy governs that processing. We don't keep your media on any server of ours.
 
-You can delete individual results from History at any time, or remove everything by clearing the app's data or uninstalling. Notifications are used only for overlay status and quick-check results, and can be disabled in system settings."""
+Account information: if you choose to sign in with Google, we receive your email address and a Google account identifier and store them through Firebase (Google) so we can recognize you and remember your premium status across devices. Signing in is optional - the app's core detection works without an account.
+
+On-device data: detection results, History thumbnails, monthly usage counts, and your settings are stored only on your phone.
+
+Advertising: unless you have Premium, the app shows ads through Google AdMob. AdMob may collect device identifiers and usage data to serve and measure ads, as described in Google's advertising policies.
+
+HOW SCREEN CAPTURE WORKS
+
+Screen capture only happens when you trigger it, and Android asks for your permission each time. The overlay permission is used solely to draw the floating bubble over other apps.
+
+YOUR CONTROLS
+
+You can delete individual History results at any time, or clear everything by wiping the app's data or uninstalling. If you signed in, you can permanently delete your account and its stored premium flag from Settings - this removes your record from our Firebase database and deletes your authentication entry. Notifications are used only for overlay status and quick-check results and can be turned off in system settings.
+
+CONTACT
+
+For privacy questions or data requests, contact: OverlAI.support@gmail.com"""
 
         private const val TERMS_TEXT = """OverlAI is provided as-is, without warranties of any kind.
 

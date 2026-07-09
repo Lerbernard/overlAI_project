@@ -94,12 +94,20 @@ object ThemeHelper {
     // ─── Apply to settings cards ──────────────────────────────────────────────
 
     fun applyCardTheme(root: android.view.View, context: Context) {
-        // ✅ recurse: cards may sit inside a ScrollView/wrapper, not just as
-        // direct children, so walk the whole subtree.
+        // ✅ walk the whole subtree so nested cards (inside a ScrollView) are
+        // themed, AND recolor their text so hardcoded light-mode titles follow
+        // the theme in dark mode.
         when (root) {
             is MaterialCardView -> {
                 root.setCardBackgroundColor(card(context))
                 for (k in 0 until root.childCount) applyCardTheme(root.getChildAt(k), context)
+            }
+            is TextView -> {
+                // leave already-themed / accent text alone; only fix the ones that
+                // are still the light-mode primary color
+                if (root.currentTextColor == color(context, R.color.lm_text_primary)) {
+                    root.setTextColor(textPrimary(context))
+                }
             }
             is android.view.ViewGroup -> {
                 for (k in 0 until root.childCount) applyCardTheme(root.getChildAt(k), context)
