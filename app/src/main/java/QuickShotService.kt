@@ -281,6 +281,18 @@ class QuickCheckTile : TileService() {
 
     override fun onClick() {
         super.onClick()
+        // ✅ premium gate: without it, open the app on Settings instead of capturing
+        if (!Premium.isActive(this)) {
+            val open = android.app.PendingIntent.getActivity(this, 9,
+                Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra("open_tab", 3)
+                }, android.app.PendingIntent.FLAG_IMMUTABLE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+                startActivityAndCollapse(open)
+            else try { open.send() } catch (_: Exception) {}
+            return
+        }
         val i = Intent(this, ScreenshotActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra("EXTRA_ACTION", "ACTION_SHOT")

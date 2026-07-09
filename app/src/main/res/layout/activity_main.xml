@@ -107,18 +107,25 @@
                 android:layout_height="match_parent"
                 android:scrollbars="none">
 
-                <FrameLayout
-                    android:id="@+id/historyAdContainer"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    android:visibility="gone" />
-
+                <!-- ✅ single child wraps the banner + list (ScrollView allows only one) -->
                 <LinearLayout
-                    android:id="@+id/historyList"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical" />
+                    android:orientation="vertical">
+
+                    <FrameLayout
+                        android:id="@+id/historyAdContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:visibility="gone" />
+
+                    <LinearLayout
+                        android:id="@+id/historyList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                </LinearLayout>
             </ScrollView>
         </LinearLayout>
 

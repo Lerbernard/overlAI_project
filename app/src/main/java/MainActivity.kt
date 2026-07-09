@@ -594,23 +594,33 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // premium-locked "Add Quick check tile"
+        // premium-gated "Add Quick check tile"
         val premium = Premium.isActive(this)
         findViewById<TextView>(R.id.tileRowSub)?.apply {
-            text = if (premium) "Adds the tile to Quick Settings" else "Premium"
-            setTextColor(if (premium) t.textSecondary(this@MainActivity) else t.primary(this@MainActivity))
+            text = if (premium) "Adds the tile to Quick Settings"
+                   else "Screenshot → check, from Quick Settings"
+            setTextColor(t.textSecondary(this@MainActivity))
         }
+        // ✅ same purple button as the others; greyed (not tappable to enable) when locked
         findViewById<TextView>(R.id.btnAddTile)?.apply {
-            text = if (premium) "Add" else "\uD83D\uDD12"
-            setTextColor(if (premium) Color.WHITE else t.textSecondary(this@MainActivity))
+            text = "Add"
+            setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
                 cornerRadius = dp(18).toFloat()
-                setColor(if (premium) t.primary(this@MainActivity)
-                         else Color.argb(20, 136, 136, 136))
+                setColor(if (premium) t.primary(this@MainActivity) else t.idleGray(this@MainActivity))
             }
             setOnClickListener {
                 if (!premium) { showPremiumDialog(); return@setOnClickListener }
                 requestAddQuickTile()
+            }
+        }
+        // ✅ PRO badge visible only when locked
+        findViewById<TextView>(R.id.tileProBadge)?.apply {
+            visibility = if (premium) View.GONE else View.VISIBLE
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(6).toFloat()
+                setColor(t.primary(this@MainActivity))
             }
         }
     }
