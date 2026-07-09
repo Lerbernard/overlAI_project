@@ -407,17 +407,37 @@
                                 android:textSize="12sp" />
                         </LinearLayout>
 
-                        <TextView
-                            android:id="@+id/btnAddTile"
+                        <FrameLayout
                             android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Add"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:paddingStart="18dp"
-                            android:paddingEnd="18dp"
-                            android:paddingTop="8dp"
-                            android:paddingBottom="8dp" />
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:id="@+id/btnAddTile"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:layout_marginEnd="6dp"
+                                android:text="Add"
+                                android:textSize="14sp"
+                                android:textStyle="bold"
+                                android:paddingStart="18dp"
+                                android:paddingEnd="18dp"
+                                android:paddingTop="8dp"
+                                android:paddingBottom="8dp" />
+
+                            <TextView
+                                android:id="@+id/tileProBadge"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="top|end"
+                                android:text="PRO"
+                                android:textSize="9sp"
+                                android:textStyle="bold"
+                                android:paddingStart="5dp"
+                                android:paddingEnd="5dp"
+                                android:paddingTop="1dp"
+                                android:paddingBottom="1dp" />
+                        </FrameLayout>
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
