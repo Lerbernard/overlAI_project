@@ -90,6 +90,8 @@ class DetectorFragment : Fragment() {
         emptyState.clipChildren = false
         emptyState.clipToPadding = false
 
+        AdManager.loadBanner(v.findViewById(R.id.adContainer))
+        AdManager.preloadInterstitial(requireContext())
         applyTheme(v)
         startPulse()
 
@@ -293,6 +295,7 @@ class DetectorFragment : Fragment() {
         btnLoader.visibility = View.GONE
         btnChoose.isEnabled = true
         btnChoose.text = "Check another"
+        activity?.let { AdManager.maybeShowAfterCheck(it) }
         val t = ThemeHelper
         val ctx = requireContext()
         val c = scoreColor(pct)

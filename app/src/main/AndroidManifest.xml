@@ -19,6 +19,12 @@
         android:theme="@style/Theme.Test103"
         android:requestLegacyExternalStorage="true">
 
+        <!-- ✅ AdMob App ID — Google's official TEST id; replace before publishing -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
+
+
         <activity android:name=".MainActivity" android:exported="true" />
 
         <!-- ✅ switchable launcher icon: exactly one alias is enabled at a time.

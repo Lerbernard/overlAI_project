@@ -49,6 +49,8 @@ class MainActivity : AppCompatActivity() {
         val viewSettings   = findViewById<LinearLayout>(R.id.viewSettings)
 
         val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+        if (!Premium.isActive(this)) AdManager.init(this)
+        if (Account.isSignedIn()) Account.syncPremiumFromCloud(this) { setupPremiumCard() }
         // toggle labels are populated by refreshSettingsStatus()
 
         // ✅ bottom navigation, Proton-style: icon pill + label
@@ -68,12 +70,12 @@ class MainActivity : AppCompatActivity() {
 
         // ✅ flat pill toggles (label in the track, sliding knob)
         findViewById<PillToggleView>(R.id.cropSwitch)?.apply {
-            configure("ON", "OFF")
+            configure("ON", "OFF", greyOff = true)
             onToggle = { checked -> prefs.edit().putBoolean("use_crop", checked).apply() }
         }
 
         findViewById<PillToggleView>(R.id.autoOffSwitch)?.apply {
-            configure("ON", "OFF")
+            configure("ON", "OFF", greyOff = true)
             onToggle = { checked -> prefs.edit().putBoolean("auto_off", checked).apply() }
         }
 
@@ -100,11 +102,17 @@ class MainActivity : AppCompatActivity() {
                 state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED).apply()
         } catch (_: Exception) {}
 
-        findViewById<ImageView>(R.id.iconPreview)?.setOnClickListener {
-            val toLight = !prefs.getBoolean("icon_light", false)
-            prefs.edit().putBoolean("icon_light", toLight).apply()
-            applyLauncherIcon(toLight)
-            refreshSettingsStatus()
+        findViewById<ImageView>(R.id.iconDark)?.setOnClickListener {
+            if (prefs.getBoolean("icon_light", false)) {
+                prefs.edit().putBoolean("icon_light", false).apply()
+                applyLauncherIcon(false); refreshSettingsStatus()
+            }
+        }
+        findViewById<ImageView>(R.id.iconLight)?.setOnClickListener {
+            if (!prefs.getBoolean("icon_light", false)) {
+                prefs.edit().putBoolean("icon_light", true).apply()
+                applyLauncherIcon(true); refreshSettingsStatus()
+            }
         }
 
         findViewById<TextView>(R.id.btnClearHistory).setOnClickListener {
@@ -131,6 +139,7 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------
 
     private fun refreshHistory() {
+        findViewById<FrameLayout>(R.id.historyAdContainer)?.let { AdManager.loadBanner(it) }
         val list = findViewById<LinearLayout>(R.id.historyList)
         list.removeAllViews()
 
@@ -427,6 +436,17 @@ class MainActivity : AppCompatActivity() {
     // ------------------------------------------------------------------
 
     private var currentTab = 0
+
+    // ✅ Google sign-in result handler
+    private val signInLauncher =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { res ->
+            Account.handleSignInResult(this, res.data) { ok ->
+                if (ok) Toast.makeText(this, "Signed in", Toast.LENGTH_SHORT).show()
+                else Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show()
+                setupAccountCard()
+                setupPremiumCard()
+            }
+        }
     private val navIcons = ArrayList<ImageView>()
     private val navPills = ArrayList<FrameLayout>()
     private val navLabels = ArrayList<TextView>()
@@ -544,6 +564,156 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** ✅ About card: version + tutorial replay */
+    private fun setupAccountCard() {
+        val t = ThemeHelper
+        val signedIn = Account.isSignedIn()
+
+        findViewById<TextView>(R.id.accountTitle)?.setTextColor(t.textPrimary(this))
+        findViewById<TextView>(R.id.accountBody)?.apply {
+            setTextColor(t.textSecondary(this@MainActivity))
+            text = if (signedIn) "Signed in as ${Account.email() ?: "your account"}"
+                   else "Sign in to sync premium across devices."
+        }
+        findViewById<TextView>(R.id.btnDeleteAccount)?.apply {
+            visibility = if (signedIn) View.VISIBLE else View.GONE
+            setTextColor(ThemeHelper.scoreHigh(this@MainActivity))
+            setOnClickListener { confirmDeleteAccount() }
+        }
+        findViewById<TextView>(R.id.btnAccount)?.apply {
+            text = if (signedIn) "Sign out" else "Sign in with Google"
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(20).toFloat()
+                setColor(if (signedIn) t.idleGray(this@MainActivity) else t.primary(this@MainActivity))
+            }
+            setOnClickListener {
+                if (signedIn) Account.signOut(this@MainActivity) {
+                    Toast.makeText(this@MainActivity, "Signed out", Toast.LENGTH_SHORT).show()
+                    setupAccountCard(); setupPremiumCard()
+                } else Account.launchSignIn(this@MainActivity, signInLauncher)
+            }
+        }
+
+        // premium-locked "Add Quick check tile"
+        val premium = Premium.isActive(this)
+        findViewById<TextView>(R.id.tileRowSub)?.apply {
+            text = if (premium) "Adds the tile to Quick Settings" else "Premium"
+            setTextColor(if (premium) t.textSecondary(this@MainActivity) else t.primary(this@MainActivity))
+        }
+        findViewById<TextView>(R.id.btnAddTile)?.apply {
+            text = if (premium) "Add" else "\uD83D\uDD12"
+            setTextColor(if (premium) Color.WHITE else t.textSecondary(this@MainActivity))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(if (premium) t.primary(this@MainActivity)
+                         else Color.argb(20, 136, 136, 136))
+            }
+            setOnClickListener {
+                if (!premium) { showPremiumDialog(); return@setOnClickListener }
+                requestAddQuickTile()
+            }
+        }
+    }
+
+    /** ✅ permanently delete the signed-in account, with confirmation. */
+    private fun confirmDeleteAccount() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Delete account?")
+            .setMessage("This permanently deletes your OverlAI account and any premium tied to it. Your on-device history stays on this phone. This can't be undone.")
+            .setPositiveButton("Delete") { _, _ ->
+                Account.deleteAccount(this) { ok, msg ->
+                    if (ok) {
+                        Toast.makeText(this, "Account deleted", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, msg ?: "Couldn't delete account", Toast.LENGTH_LONG).show()
+                    }
+                    setupAccountCard(); setupPremiumCard()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** ✅ ask the system to add the Quick check tile (Android 13+). */
+    private fun requestAddQuickTile() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val sm = getSystemService(android.app.StatusBarManager::class.java)
+            sm.requestAddTileService(
+                android.content.ComponentName(this, "com.example.test103.QuickCheckTile"),
+                "Quick check",
+                android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_nav_detector),
+                {}, {})
+        } else {
+            Toast.makeText(this,
+                "Pull down Quick Settings, tap edit, and drag in the Quick check tile.",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun setupPremiumCard() {
+        val t = ThemeHelper
+        val premium = Premium.isActive(this)
+
+        findViewById<TextView>(R.id.premiumTitle)?.setTextColor(t.textPrimary(this))
+        findViewById<TextView>(R.id.premiumBody)?.apply {
+            setTextColor(t.textSecondary(this@MainActivity))
+            text = if (premium) "Premium active — ads are off. Thank you!"
+                   else "Remove ads and support development."
+        }
+        findViewById<TextView>(R.id.btnPremium)?.apply {
+            if (premium) {
+                text = "Restore / manage"
+                setTextColor(t.textSecondary(this@MainActivity))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(20).toFloat()
+                    setColor(Color.argb(20, 136, 136, 136))
+                }
+            } else {
+                text = "Remove ads — $2.99/mo"
+                setTextColor(Color.WHITE)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(20).toFloat()
+                    setColor(t.primary(this@MainActivity))
+                }
+            }
+            setOnClickListener { showPremiumDialog() }
+        }
+    }
+
+    /** ✅ placeholder purchase flow — Play Billing slots in here later. */
+    private fun showPremiumDialog() {
+        val premium = Premium.isActive(this)
+        if (premium) {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("OverlAI Premium")
+                .setMessage("Premium is active on this device. Real subscription management will open the Play Store once billing is live.")
+                .setPositiveButton("OK", null)
+                .setNeutralButton("Turn off (test)") { _, _ ->
+                    Premium.setPremiumSynced(this, false); refreshPremium()
+                }
+                .show()
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Remove ads")
+            .setMessage("This will be a $2.99/month subscription through Google Play. Billing isn't wired up yet — for now this unlocks premium locally so you can preview the ad-free experience.")
+            .setPositiveButton("Unlock (test)") { _, _ ->
+                Premium.setPremiumSynced(this, true)
+                Toast.makeText(this, "Premium unlocked — ads removed", Toast.LENGTH_SHORT).show()
+                refreshPremium()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun refreshPremium() {
+        setupPremiumCard()
+        // reflect immediately if the detector is live
+        (supportFragmentManager.findFragmentById(R.id.viewDetector) as? DetectorFragment)?.let {
+            it.view?.findViewById<FrameLayout>(R.id.adContainer)?.let { c -> AdManager.loadBanner(c) }
+        }
+    }
+
     private fun setupAboutCard() {
         val version = try {
             packageManager.getPackageInfo(packageName, 0).versionName
@@ -660,14 +830,16 @@ These terms may be updated as the app evolves; continued use means acceptance of
         }
 
         val light = prefs.getBoolean("icon_light", false)
-        findViewById<ImageView>(R.id.iconPreview)?.setImageDrawable(iconPreviewDrawable(light))
+        findViewById<ImageView>(R.id.iconDark)?.setImageDrawable(iconPreviewDrawable(false, !light))
+        findViewById<ImageView>(R.id.iconLight)?.setImageDrawable(iconPreviewDrawable(true, light))
     }
 
-    private fun iconPreviewDrawable(light: Boolean): android.graphics.drawable.Drawable {
+    private fun iconPreviewDrawable(light: Boolean, selected: Boolean): android.graphics.drawable.Drawable {
         val bg = GradientDrawable().apply {
             cornerRadius = dp(12).toFloat()
             setColor(if (light) Color.WHITE else Color.parseColor("#0E0E10"))
-            if (light) setStroke(dp(1), Color.parseColor("#33000000"))
+            if (selected) setStroke(dp(2), ThemeHelper.primary(this@MainActivity))
+            else setStroke(dp(1), Color.parseColor("#33888888"))
         }
         val mark = androidx.core.content.ContextCompat.getDrawable(this,
             if (light) R.drawable.ic_nav_logo_light else R.drawable.ic_nav_logo)!!.mutate()
@@ -705,6 +877,8 @@ These terms may be updated as the app evolves; continued use means acceptance of
     override fun onResume() {
         super.onResume()
         setupAboutCard()
+        setupPremiumCard()
+        setupAccountCard()
         refreshSettingsStatus()
         refreshUsage()
         refreshDashboard()

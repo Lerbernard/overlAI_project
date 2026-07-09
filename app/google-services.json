@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "395261180710",
+    "project_id": "overlai-ddd41",
+    "storage_bucket": "overlai-ddd41.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:395261180710:android:eb6eaf94126c3afffd9fe7",
+        "android_client_info": {
+          "package_name": "com.lerbernard.overlai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAA-n4lXg5n3aslGT2UGBD1BagZgyApFRY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

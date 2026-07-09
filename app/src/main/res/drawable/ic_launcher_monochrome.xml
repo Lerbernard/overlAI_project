@@ -1,18 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- res/drawable/ic_launcher_monochrome.xml
-     Material You fills this as ONE white silhouette, so it must read as a
-     single recognizable mark: a lens ring with a solid center dot, sized
-     inside the 66dp adaptive safe zone. -->
+     Exact geometry of the real launcher icon, all in white so Material You
+     renders it as one clean silhouette matching the color icon. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- ring: an annulus via even-odd (outer circle minus inner circle) -->
-    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
-        android:pathData="M54,32
-                          a22,22 0 1 0 0.01,0 Z
-                          M54,41
-                          a13,13 0 1 1 -0.01,0 Z" />
-    <!-- solid center dot -->
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M54,54 m-6,0 a6,6 0 1 0 12,0 a6,6 0 1 0 -12,0" />
+
+    <!-- teal arc (top-right sweep) -->
+    <path
+        android:strokeColor="#FFFFFF" android:strokeWidth="5.5"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M51.05,37.26 A17,17 0 0 1 67.93,63.75" />
+
+    <!-- purple arc (bottom-left sweep) -->
+    <path
+        android:strokeColor="#FFFFFF" android:strokeWidth="5.5"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M56.95,70.74 A17,17 0 0 1 40.07,44.25" />
+
+    <!-- spark in the top-left gap -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44.87,39.67 m-2.6,0 a2.6,2.6 0 1 0 5.2,0 a2.6,2.6 0 1 0 -5.2,0" />
+
+    <!-- lens center -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,54 m-4.6,0 a4.6,4.6 0 1 0 9.2,0 a4.6,4.6 0 1 0 -9.2,0" />
 </vector>

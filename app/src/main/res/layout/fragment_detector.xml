@@ -254,6 +254,15 @@
         android:textStyle="bold" />
 
     <!-- button pinned to the bottom -->
+    <!-- ✅ banner ad (hidden for premium users) sits just above the button -->
+    <FrameLayout
+        android:id="@+id/adContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="64dp"
+        android:visibility="gone" />
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
