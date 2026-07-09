@@ -54,13 +54,15 @@ object DetectionClient {
         }
 
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("api_user", BuildConfig.SE_API_USER)
-            .addFormDataPart("api_secret", BuildConfig.SE_API_SECRET)
             .addFormDataPart("models", "genai")
             .addFormDataPart("media", file.name, file.asRequestBody("image/jpeg".toMediaTypeOrNull()))
             .build()
 
-        val req = Request.Builder().url("https://api.sightengine.com/1.0/check.json").post(body).build()
+        // ✅ keys live in the proxy now, not in the app
+        val req = Request.Builder()
+            .url("${BuildConfig.PROXY_BASE}/image")
+            .addHeader("X-App-Token", BuildConfig.APP_TOKEN)
+            .post(body).build()
         client.newCall(req).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 main.post { onError("Check your internet connection") }
@@ -88,13 +90,15 @@ object DetectionClient {
         val app = context.applicationContext
 
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("api_user", BuildConfig.SE_API_USER)
-            .addFormDataPart("api_secret", BuildConfig.SE_API_SECRET)
             .addFormDataPart("models", "genai")
             .addFormDataPart("media", file.name, file.asRequestBody("video/mp4".toMediaTypeOrNull()))
             .build()
 
-        val req = Request.Builder().url("https://api.sightengine.com/1.0/video/check-sync.json").post(body).build()
+        // ✅ keys live in the proxy now, not in the app
+        val req = Request.Builder()
+            .url("${BuildConfig.PROXY_BASE}/video")
+            .addHeader("X-App-Token", BuildConfig.APP_TOKEN)
+            .post(body).build()
         client.newCall(req).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 main.post { onError("Check your internet connection") }

@@ -12,8 +12,9 @@ val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-val seApiUser: String = localProps.getProperty("SE_API_USER", "")
-val seApiSecret: String = localProps.getProperty("SE_API_SECRET", "")
+// ✅ keys no longer live in the app; only the proxy URL + a shared app token do
+val proxyBase: String = localProps.getProperty("PROXY_BASE", "")
+val appToken: String = localProps.getProperty("APP_TOKEN", "")
 
 android {
     namespace = "com.example.test103"
@@ -30,8 +31,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // ✅ Keys are injected at build time — never committed to git
-        buildConfigField("String", "SE_API_USER", "\"$seApiUser\"")
-        buildConfigField("String", "SE_API_SECRET", "\"$seApiSecret\"")
+        buildConfigField("String", "PROXY_BASE", "\"$proxyBase\"")
+        buildConfigField("String", "APP_TOKEN", "\"$appToken\"")
     }
 
     buildFeatures {
