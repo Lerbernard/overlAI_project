@@ -56,11 +56,14 @@ object BugReports {
     }
 
     /** sampled decode + JPEG compress + base64, kept safely under the doc limit */
-    private fun encodeImage(context: Context, uri: Uri): String? = try {
-        // pass 1: bounds only
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        if (bounds.outWidth <= 0) null else {
+    private fun encodeImage(context: Context, uri: Uri): String? {
+        try {
+            // pass 1: bounds only
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, bounds)
+            }
+            if (bounds.outWidth <= 0) return null
             var sample = 1
             while (bounds.outWidth / (sample * 2) >= 1280 ||
                    bounds.outHeight / (sample * 2) >= 1280) sample *= 2
@@ -77,7 +80,10 @@ object BugReports {
                 quality -= 15
             } while (bytes.size > 650_000 && quality > 20)  // base64 adds ~33%
             bmp.recycle()
-            Base64.encodeToString(bytes, Base64.NO_WRAP)
+            return Base64.encodeToString(bytes, Base64.NO_WRAP)
+        } catch (e: Exception) {
+            Log.e("BugReports", "encode failed", e)
+            return null
         }
-    } catch (e: Exception) { Log.e("BugReports", "encode failed", e); null }
+    }
 }
