@@ -12,7 +12,28 @@
           "package_name": "com.lerbernard.overlai"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "395261180710-bgapiur8e73hh37tgo28emcbioj3vhlc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.lerbernard.overlai",
+            "certificate_hash": "e1bed11b4a6e46290beca8752037eb6672dd8d1c"
+          }
+        },
+        {
+          "client_id": "395261180710-pn6fdbbl9h105g0e1mq98q2ttg12e6fv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.lerbernard.overlai",
+            "certificate_hash": "6a83bde8f5f0b486b24a333a826896a75997a030"
+          }
+        },
+        {
+          "client_id": "395261180710-cke4127biv7gufukg21u14f2kel49apg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAA-n4lXg5n3aslGT2UGBD1BagZgyApFRY"
@@ -20,7 +41,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "395261180710-cke4127biv7gufukg21u14f2kel49apg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

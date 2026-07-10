@@ -687,7 +687,7 @@ class MainActivity : AppCompatActivity() {
                     setColor(Color.argb(20, 136, 136, 136))
                 }
             } else {
-                text = "Remove ads - $2.99/mo"
+                text = "Remove ads - Free (testing)"
                 setTextColor(Color.WHITE)
                 background = GradientDrawable().apply {
                     cornerRadius = dp(20).toFloat()
@@ -727,6 +727,7 @@ class MainActivity : AppCompatActivity() {
     private fun refreshPremium() {
         setupPremiumCard()
         setupAccountCard()
+        findViewById<FrameLayout>(R.id.overlayAdContainer)?.let { AdManager.loadBanner(it) }
         // reflect immediately if the detector is live
         (supportFragmentManager.findFragmentById(R.id.viewDetector) as? DetectorFragment)?.let {
             it.view?.findViewById<FrameLayout>(R.id.adContainer)?.let { c -> AdManager.loadBanner(c) }
@@ -921,6 +922,7 @@ These terms may be updated as the app evolves; continued use means acceptance of
 
     /** ✅ Overlay tab: minimal centered hero - ring, state, button. */
     private fun refreshDashboard() {
+        findViewById<FrameLayout>(R.id.overlayAdContainer)?.let { AdManager.loadBanner(it) }
         val t = ThemeHelper
         val on = OverlayService.isRunning
         // ✅ the logo IS the status light: full color when on, gray when off

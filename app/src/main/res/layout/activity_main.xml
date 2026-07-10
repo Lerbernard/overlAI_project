@@ -149,6 +149,8 @@
                 android:textStyle="bold" />
 
             <ScrollView
+                android:clipToPadding="false"
+                android:paddingBottom="28dp"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
@@ -571,6 +573,45 @@
                                 android:paddingBottom="10dp" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
+                    <!-- ✅ usage -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_margin="8dp"
+                        app:cardBackgroundColor="@color/lm_card"
+                        app:cardCornerRadius="24dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:paddingStart="24dp"
+                            android:paddingEnd="24dp"
+                            android:paddingTop="16dp"
+                            android:paddingBottom="16dp">
+
+                            <TextView
+                                android:id="@+id/usage_title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Usage"
+                                android:textColor="@color/lm_text_primary"
+                                android:textSize="16sp" />
+
+                            <TextView
+                                android:id="@+id/usage_text"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="Images: 0 · Videos: 0"
+                                android:textColor="@color/lm_text_primary"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+
 
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
@@ -633,48 +674,6 @@
                                 android:textStyle="bold" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
-
-
-
-
-                    <!-- ✅ usage -->
-                    <com.google.android.material.card.MaterialCardView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_margin="8dp"
-                        app:cardBackgroundColor="@color/lm_card"
-                        app:cardCornerRadius="24dp"
-                        app:cardElevation="0dp"
-                        app:strokeWidth="0dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:paddingStart="24dp"
-                            android:paddingEnd="24dp"
-                            android:paddingTop="16dp"
-                            android:paddingBottom="16dp">
-
-                            <TextView
-                                android:id="@+id/usage_title"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Usage"
-                                android:textColor="@color/lm_text_primary"
-                                android:textSize="16sp" />
-
-                            <TextView
-                                android:id="@+id/usage_text"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="4dp"
-                                android:text="Images: 0 · Videos: 0"
-                                android:textColor="@color/lm_text_primary"
-                                android:textSize="13sp" />
-                        </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
-
 
                 </LinearLayout>
             </ScrollView>

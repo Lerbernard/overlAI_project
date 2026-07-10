@@ -1,21 +1,51 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ============================================================================
+# OverlAI - R8 / ProGuard rules for release builds
+# ============================================================================
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# --- Fix: R8 errors on classes the ads SDK references but that don't exist
+#     on this compileSdk (e.g. LoudnessCodecController). Treat as warnings. ---
+-dontwarn android.media.LoudnessCodecController
+-dontwarn com.google.android.gms.internal.ads.**
+-dontwarn com.google.android.gms.**
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# --- Google Mobile Ads (AdMob) ---
+-keep class com.google.android.gms.ads.** { *; }
+-keep class com.google.android.gms.internal.ads.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# --- Firebase Auth + Firestore ---
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.common.** { *; }
+-dontwarn com.google.firebase.**
+# Firestore serializes model classes via reflection; keep any you pass to it.
+-keepclassmembers class * {
+    @com.google.firebase.firestore.PropertyName *;
+}
+
+# --- OkHttp / Okio (networking to the proxy) ---
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class okhttp3.** { *; }
+-keep class okio.** { *; }
+
+# --- org.json (used to parse Sightengine responses) ---
+-dontwarn org.json.**
+
+# --- Media3 / ExoPlayer (video preview) ---
+-dontwarn androidx.media3.**
+-keep class androidx.media3.** { *; }
+
+# --- Keep your custom Views (referenced from XML by name via reflection) ---
+-keep class com.example.test103.PillToggleView { *; }
+-keep class com.example.test103.OutlineIconView { *; }
+
+# --- Keep TileService + Service classes referenced from the manifest ---
+-keep class com.example.test103.OverlayTileService { *; }
+-keep class com.example.test103.QuickCheckTile { *; }
+-keep class com.example.test103.OverlayService { *; }
+-keep class com.example.test103.QuickShotService { *; }
+-keep class com.example.test103.ScreenshotActivity { *; }
+-keep class com.example.test103.ShareDetectActivity { *; }
+
+# Keep line numbers for readable crash reports (optional but recommended)
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

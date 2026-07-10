@@ -16,6 +16,13 @@ val localProps = Properties().apply {
 val proxyBase: String = localProps.getProperty("PROXY_BASE", "")
 val appToken: String = localProps.getProperty("APP_TOKEN", "")
 
+// ✅ Signing config, read from keystore.properties (git-ignored, never committed)
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val hasKeystore = keystoreProps.getProperty("storeFile") != null
+
 android {
     namespace = "com.example.test103"
     compileSdk = 34
@@ -39,10 +46,23 @@ android {
         buildConfig = true   // required for buildConfigField on AGP 8+
     }
 
+    signingConfigs {
+        if (hasKeystore) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true   // ✅ shrink + obfuscate release builds
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // ✅ sign the release build if keystore.properties is present
+            if (hasKeystore) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
