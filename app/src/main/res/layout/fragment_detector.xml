@@ -12,7 +12,8 @@
         android:layout_marginTop="52dp"
         android:layout_marginBottom="72dp"
         android:overScrollMode="never"
-        android:scrollbars="none">
+        android:scrollbars="none"
+        android:importantForAccessibility="no">
 
         <LinearLayout
             android:id="@+id/contentArea"
@@ -195,7 +196,8 @@
                 android:gravity="center"
                 android:text="+"
                 android:textSize="17sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                android:importantForAccessibility="no" />
         </FrameLayout>
 
         <TextView
@@ -266,7 +268,8 @@
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom">
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="16dp">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnChoose"

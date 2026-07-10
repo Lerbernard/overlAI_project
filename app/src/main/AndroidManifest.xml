@@ -119,6 +119,7 @@
         <receiver
             android:name=".OverlayWidgetProvider"
             android:exported="true"
+            android:enabled="false"
             android:label="overlAI">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -132,6 +133,7 @@
         <receiver
             android:name=".OverlayStatsWidget"
             android:exported="true"
+            android:enabled="false"
             android:label="OverlAI Dashboard">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

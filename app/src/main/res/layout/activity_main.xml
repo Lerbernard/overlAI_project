@@ -12,7 +12,9 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:padding="24dp">
+        android:paddingStart="24dp"
+        android:paddingTop="24dp"
+        android:paddingEnd="24dp">
 
         <!-- OVERLAY TAB - minimal centered hero -->
         <LinearLayout
@@ -20,8 +22,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:gravity="center"
+            android:gravity="center_horizontal"
             android:visibility="visible">
+
+            <!-- spacer centers the hero, pushes ad to bottom -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
 
             <ImageView
                 android:id="@+id/dashLogo"
@@ -48,6 +56,21 @@
                 android:text="Activate"
                 android:textAllCaps="false"
                 app:cornerRadius="25dp" />
+
+            <!-- balancing spacer keeps hero centered -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <!-- ✅ banner ad pinned to bottom of Overlay page (hidden for premium) -->
+            <FrameLayout
+                android:id="@+id/overlayAdContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:gravity="center"
+                android:visibility="gone" />
         </LinearLayout>
 
         <!-- DETECTOR TAB -->
