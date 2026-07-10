@@ -651,8 +651,7 @@ class MainActivity : AppCompatActivity() {
 
     /** ✅ permanently delete the signed-in account, with confirmation. */
     private fun confirmDeleteAccount() {
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Delete account?")
+        val b = android.app.AlertDialog.Builder(this)
             .setMessage("This permanently deletes your OverlAI account and any premium tied to it. Your on-device history stays on this phone. This can't be undone.")
             .setPositiveButton("Delete") { _, _ ->
                 Account.deleteAccount(this) { ok, msg ->
@@ -665,7 +664,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Cancel", null)
-            .show()
+        showThemed(b, "Delete account?")
+            .getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+            ?.setTextColor(ThemeHelper.scoreHigh(this))
     }
 
     private fun setupPremiumCard() {
@@ -702,26 +703,24 @@ class MainActivity : AppCompatActivity() {
     private fun showPremiumDialog() {
         val premium = Premium.isActive(this)
         if (premium) {
-            android.app.AlertDialog.Builder(this)
-                .setTitle("OverlAI Premium")
+            val b = android.app.AlertDialog.Builder(this)
                 .setMessage("Premium is active on this device. Real subscription management will open the Play Store once billing is live.")
                 .setPositiveButton("OK", null)
-                .setNeutralButton("Turn off (test)") { _, _ ->
+                .setNeutralButton("Turn ads back on") { _, _ ->
                     Premium.setPremiumSynced(this, false); refreshPremium()
                 }
-                .show()
+            showThemed(b, "OverlAI Premium")
             return
         }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Remove ads")
-            .setMessage("This will be a $2.99/month subscription through Google Play. Billing isn't wired up yet - for now this unlocks premium locally so you can preview the ad-free experience.")
-            .setPositiveButton("Unlock (test)") { _, _ ->
+        val b = android.app.AlertDialog.Builder(this)
+            .setMessage("Paid subscriptions are coming soon. For now (testing period) this unlocks the ad-free experience so you can try it out.")
+            .setPositiveButton("Unlock") { _, _ ->
                 Premium.setPremiumSynced(this, true)
-                Toast.makeText(this, "Premium unlocked - ads removed", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Ads removed", Toast.LENGTH_SHORT).show()
                 refreshPremium()
             }
             .setNegativeButton("Cancel", null)
-            .show()
+        showThemed(b, "Remove ads")
     }
 
     private fun refreshPremium() {
@@ -760,6 +759,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** ✅ one consistent look for all popups: rounded card, themed title,
+     *  colored buttons. Pass the built (un-shown) builder here. */
+    private fun showThemed(builder: android.app.AlertDialog.Builder, title: String? = null): android.app.AlertDialog {
+        val t = ThemeHelper
+        if (title != null) {
+            builder.setCustomTitle(TextView(this).apply {
+                text = title
+                textSize = 19f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(t.textPrimary(this@MainActivity))
+                setPadding(dp(24), dp(20), dp(24), dp(6))
+            })
+        }
+        val d = builder.create()
+        d.show()
+        d.window?.setBackgroundDrawable(GradientDrawable().apply {
+            cornerRadius = dp(22).toFloat()
+            setColor(t.card(this@MainActivity))
+        })
+        d.findViewById<TextView>(android.R.id.message)?.setTextColor(t.textSecondary(this))
+        d.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(t.primary(this))
+        d.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(t.textSecondary(this))
+        d.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)?.setTextColor(t.textSecondary(this))
+        return d
+    }
+
     // ---------- ✅ bug reporting ----------
     private val bugAttachments = mutableListOf<Uri>()
     private var bugAttachLabel: TextView? = null
@@ -793,14 +818,14 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.TOP
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
-                setColor(t.card(this@MainActivity))
+                setColor(Color.argb(26, 136, 136, 136))
             }
             setPadding(dp(14), dp(12), dp(14), dp(12))
         }
         box.addView(input)
 
         val attachBtn = TextView(this).apply {
-            text = "Attach images / videos"
+            text = "Attach screenshots"
             setTextColor(Color.WHITE)
             textSize = 14f
             setPadding(dp(16), dp(10), dp(16), dp(10))
@@ -809,7 +834,7 @@ class MainActivity : AppCompatActivity() {
                 setColor(t.primary(this@MainActivity))
             }
             setOnClickListener {
-                try { bugMediaPicker.launch(arrayOf("image/*", "video/*")) }
+                try { bugMediaPicker.launch(arrayOf("image/*")) }
                 catch (e: Exception) {
                     Toast.makeText(this@MainActivity, "Couldn't open the picker", Toast.LENGTH_SHORT).show()
                 }
@@ -831,8 +856,7 @@ class MainActivity : AppCompatActivity() {
         attachRow.addView(countLabel)
         box.addView(attachRow)
 
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Report a bug")
+        val b = android.app.AlertDialog.Builder(this)
             .setView(box)
             .setPositiveButton("Send") { _, _ ->
                 val desc = input.text?.toString()?.trim().orEmpty()
@@ -841,39 +865,13 @@ class MainActivity : AppCompatActivity() {
                 } else sendBugReport(desc)
             }
             .setNegativeButton("Cancel", null)
-            .show()
+        showThemed(b, "Report a bug")
     }
 
     private fun sendBugReport(description: String) {
-        val version = try {
-            packageManager.getPackageInfo(packageName, 0).versionName
-        } catch (e: Exception) { "?" }
-        val body = buildString {
-            appendLine(description)
-            appendLine()
-            appendLine("----------------")
-            appendLine("App version: $version")
-            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
-            appendLine("Android: ${Build.VERSION.RELEASE}")
-        }
-        try {
-            val intent = if (bugAttachments.isEmpty()) {
-                Intent(Intent.ACTION_SEND).apply { type = "text/plain" }
-            } else {
-                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-                    type = "*/*"
-                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(bugAttachments))
-                }
-            }.apply {
-                putExtra(Intent.EXTRA_EMAIL, arrayOf("OverlAI.support@gmail.com"))
-                putExtra(Intent.EXTRA_SUBJECT, "OverlAI bug report")
-                putExtra(Intent.EXTRA_TEXT, body)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(intent, "Send bug report"))
-        } catch (e: Exception) {
-            Toast.makeText(this, "No email app found - contact OverlAI.support@gmail.com", Toast.LENGTH_LONG).show()
-        }
+        // ✅ report + compressed screenshots all go straight into Firestore
+        BugReports.submit(this, description, bugAttachments.toList())
+        Toast.makeText(this, "Bug report submitted - thank you!", Toast.LENGTH_SHORT).show()
     }
 
     /** ✅ scrollable popup for Terms / Privacy */

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>OverlAI bug screenshot viewer</title>
+<style>
+ body{font-family:sans-serif;max-width:900px;margin:30px auto;padding:0 16px}
+ textarea{width:100%;height:120px;font-family:monospace;font-size:11px}
+ img{max-width:100%;margin-top:16px;border:1px solid #ccc;border-radius:8px}
+</style></head>
+<body>
+<h2>OverlAI bug screenshot viewer</h2>
+<p>Paste the <code>image</code> field from a bug report's attachment below:</p>
+<textarea id="b64" placeholder="paste base64 here"></textarea>
+<div><img id="out" alt=""/></div>
+<script>
+ document.getElementById('b64').addEventListener('input', e => {
+   const v = e.target.value.trim().replace(/\s+/g,'');
+   if (v) document.getElementById('out').src = 'data:image/jpeg;base64,' + v;
+ });
+</script>
+</body></html>
