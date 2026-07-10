@@ -114,7 +114,7 @@ class DetectorFragment : Fragment() {
         if (requestCode == CROP_IMAGE) {
             if (resultCode == Activity.RESULT_OK) {
                 val out = File(requireContext().cacheDir, "detector_crop_out.png")
-                val bmp = if (out.exists()) BitmapFactory.decodeFile(out.absolutePath) else null
+                val bmp = if (out.exists()) decodeSampled(out.absolutePath) else null
                 if (bmp != null) {
                     showPreview(bmp, isVideo = false)
                     detectImageFile(out)
@@ -147,7 +147,7 @@ class DetectorFragment : Fragment() {
                         File(requireContext().cacheDir, "detector_crop_out.png").absolutePath)
                 }, CROP_IMAGE)
         } else {
-            val bmp = BitmapFactory.decodeFile(input.absolutePath)
+            val bmp = decodeSampled(input.absolutePath)
             if (bmp == null) { showMessage("Couldn't read the image"); return }
             showPreview(bmp, isVideo = false)
             detectImageFile(input)
@@ -204,7 +204,7 @@ class DetectorFragment : Fragment() {
                 if (s != session || !isAdded) return@detectImage
                 showResult(pct)
                 try {
-                    val thumb = BitmapFactory.decodeFile(file.absolutePath)
+                    val thumb = decodeSampled(file.absolutePath, maxDim = 512)
                     HistoryManager.add(requireContext(), pct, "Image", thumb)
                     thumb?.recycle()
                 } catch (_: Exception) {}
@@ -456,5 +456,19 @@ class DetectorFragment : Fragment() {
 
         btnChoose.backgroundTintList = android.content.res.ColorStateList.valueOf(t.primary(ctx))
         btnChoose.setTextColor(Color.WHITE)
+    }
+
+    /** ✅ decode a file scaled down near [maxDim] px so huge camera photos
+     *  (50MP ≈ 200MB decoded) can't exceed Android's canvas draw limit. */
+    private fun decodeSampled(path: String, maxDim: Int = 1600): android.graphics.Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= maxDim ||
+                   bounds.outHeight / (sample * 2) >= maxDim) sample *= 2
+            BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+        } catch (e: Exception) { null }
     }
 }

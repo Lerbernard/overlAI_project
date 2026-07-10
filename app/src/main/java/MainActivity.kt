@@ -754,6 +754,126 @@ class MainActivity : AppCompatActivity() {
             setTextColor(ThemeHelper.primary(this@MainActivity))
             setOnClickListener { TutorialDialog.show(this@MainActivity) }
         }
+        findViewById<TextView>(R.id.btnReportBug)?.apply {
+            setTextColor(ThemeHelper.primary(this@MainActivity))
+            setOnClickListener { showBugReportDialog() }
+        }
+    }
+
+    // ---------- ✅ bug reporting ----------
+    private val bugAttachments = mutableListOf<Uri>()
+    private var bugAttachLabel: TextView? = null
+
+    private val bugMediaPicker = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            bugAttachments.clear()
+            bugAttachments.addAll(uris)
+            bugAttachLabel?.text = "${uris.size} file(s) attached"
+        }
+    }
+
+    /** ✅ popup: describe the bug, attach images/videos, send by email. */
+    private fun showBugReportDialog() {
+        val t = ThemeHelper
+        bugAttachments.clear()
+
+        val pad = dp(20)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, dp(12), pad, 0)
+        }
+
+        val input = android.widget.EditText(this).apply {
+            hint = "Describe the bug: what did you do, what happened?"
+            setHintTextColor(t.textSecondary(this@MainActivity))
+            setTextColor(t.textPrimary(this@MainActivity))
+            minLines = 4
+            gravity = Gravity.TOP
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(t.card(this@MainActivity))
+            }
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        box.addView(input)
+
+        val attachBtn = TextView(this).apply {
+            text = "Attach images / videos"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(t.primary(this@MainActivity))
+            }
+            setOnClickListener {
+                try { bugMediaPicker.launch(arrayOf("image/*", "video/*")) }
+                catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Couldn't open the picker", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        val attachRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(14), 0, 0)
+            addView(attachBtn)
+        }
+        val countLabel = TextView(this).apply {
+            text = "No files attached"
+            textSize = 13f
+            setTextColor(t.textSecondary(this@MainActivity))
+            setPadding(dp(12), 0, 0, 0)
+        }
+        bugAttachLabel = countLabel
+        attachRow.addView(countLabel)
+        box.addView(attachRow)
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Report a bug")
+            .setView(box)
+            .setPositiveButton("Send") { _, _ ->
+                val desc = input.text?.toString()?.trim().orEmpty()
+                if (desc.isEmpty() && bugAttachments.isEmpty()) {
+                    Toast.makeText(this, "Please describe the bug first", Toast.LENGTH_SHORT).show()
+                } else sendBugReport(desc)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun sendBugReport(description: String) {
+        val version = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: Exception) { "?" }
+        val body = buildString {
+            appendLine(description)
+            appendLine()
+            appendLine("----------------")
+            appendLine("App version: $version")
+            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("Android: ${Build.VERSION.RELEASE}")
+        }
+        try {
+            val intent = if (bugAttachments.isEmpty()) {
+                Intent(Intent.ACTION_SEND).apply { type = "text/plain" }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "*/*"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(bugAttachments))
+                }
+            }.apply {
+                putExtra(Intent.EXTRA_EMAIL, arrayOf("OverlAI.support@gmail.com"))
+                putExtra(Intent.EXTRA_SUBJECT, "OverlAI bug report")
+                putExtra(Intent.EXTRA_TEXT, body)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Send bug report"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "No email app found - contact OverlAI.support@gmail.com", Toast.LENGTH_LONG).show()
+        }
     }
 
     /** ✅ scrollable popup for Terms / Privacy */
