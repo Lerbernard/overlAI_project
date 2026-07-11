@@ -366,8 +366,12 @@ class OverlayService : Service() {
      *  Pure integer math in ONE coordinate space — no correction needed. */
     private fun setDirectionUp(up: Boolean) {
         if (up == stackAtBottom) return
-        // ✅ the button's screen position is the one thing that must not move
-        val btnTop = buttonTopOnScreen()
+        // ✅ the button's REAL on-screen position (measured, not computed) is
+        // the one thing that must not move
+        val before = IntArray(2)
+        mainButton.getLocationOnScreen(before)
+        val btnTop = before[1]
+
         stackAtBottom = up
         (stackView.layoutParams as FrameLayout.LayoutParams).gravity =
             (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
@@ -381,6 +385,20 @@ class OverlayService : Service() {
             else btnTop                                   // offset above the button
         overlayParams.y = clampWindowY(overlayParams.y)
         try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+
+        // ✅ self-correction pass (the polish2 trick): after layout, measure
+        // the button again and nudge away any residual drift, pixel-perfect
+        rootView.post {
+            val after = IntArray(2)
+            mainButton.getLocationOnScreen(after)
+            val drift = after[1] - before[1]
+            if (drift != 0) {
+                // moving the window UP means y-- in top coords, y++ in bottom coords
+                overlayParams.y += if (stackAtBottom) drift else -drift
+                overlayParams.y = clampWindowY(overlayParams.y)
+                try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+            }
+        }
     }
 
     private fun maybeRestoreDirection() {
