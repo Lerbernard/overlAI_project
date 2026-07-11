@@ -184,6 +184,24 @@ class OverlayService : Service() {
         try { windowManager.removeView(menuRoot) } catch (_: Exception) {}
     }
 
+    /** ✅ real system insets so the bubble stays clear of the status bar
+     *  (clock/battery) and the navigation bar */
+    private val topInset: Int
+        get() = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                windowManager.currentWindowMetrics.windowInsets
+                    .getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
+            } else dpToPx(28)
+        } catch (_: Exception) { dpToPx(28) }
+
+    private val bottomInset: Int
+        get() = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                windowManager.currentWindowMetrics.windowInsets
+                    .getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom
+            } else dpToPx(24)
+        } catch (_: Exception) { dpToPx(24) }
+
     private fun clampWindowY(y: Int): Int {
         val top = topInset + dpToPx(6)
         val bottom = screenHeight - bottomInset - dpToPx(6)
