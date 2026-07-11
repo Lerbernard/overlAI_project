@@ -365,12 +365,21 @@ class OverlayService : Service() {
      *  Pure integer math in ONE coordinate space — no correction needed. */
     private fun setDirectionUp(up: Boolean) {
         if (up == stackAtBottom) return
+        sizeAnimator?.cancel()   // ✅ never flip mid-resize
+        val h = overlayParams.height
         stackAtBottom = up
         (stackView.layoutParams as FrameLayout.LayoutParams).gravity =
             (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
         applyChildOrder()
-        // window height equals content in both directions, so the button
-        // position is untouched by the flip itself
+        // ✅ the button's slot inside the frame moves between the top and
+        // bottom edge when the stack flips - shift the window the opposite
+        // way by exactly that distance so the button stays pixel-fixed
+        // (matters most when the result chip is visible during the flip)
+        if (h > 0 && h != mainSize) {
+            overlayParams.y += if (up) -(h - mainSize) else (h - mainSize)
+            overlayParams.y = clampWindowY(overlayParams.y)
+            try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+        }
     }
 
     private fun maybeRestoreDirection() {
@@ -384,7 +393,7 @@ class OverlayService : Service() {
     // ---------------------------------------------------------------------
 
     private fun expandMenu() {
-        if (isExpanded) return
+        if (isExpanded || collapsing) return
         isExpanded = true
 
         if (!stackAtBottom) {
@@ -410,22 +419,48 @@ class OverlayService : Service() {
         mainButton.setGlyphTint(TEAL)
     }
 
+    private var collapsing = false
+
     private fun collapseMenu() {
-        if (!isExpanded) return
+        if (!isExpanded || collapsing) return
         // ✅ locked while a check is in flight — capture in progress or
         // the result pill still showing "..." (waiting for the API)
         if (isProcessing) return
         if (resultChip.visibility == View.VISIBLE && resultLabel.text == "...") return
+        collapsing = true
         isExpanded = false
-        // ✅ collapsing dismisses everything, answer included
-        photoBtn.visibility = View.GONE
-        videoBtn.visibility = View.GONE
-        resultChip.visibility = View.GONE
         mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
         mainButton.setGlyphTint(PURPLE)
-        refreshPanel()
-        syncWindowSize()   // ✅ shrink back to just the visible content
-        maybeRestoreDirection()
+
+        // ✅ smooth collapse: items glide back toward the button and fade,
+        // the pill fades with them, THEN the window shrinks (animated)
+        val slide = dpToPx(10).toFloat() * (if (stackAtBottom) 1f else -1f)
+        for (v in listOf(photoBtn, videoBtn, resultChip)) {
+            if (v.visibility == View.VISIBLE) {
+                v.animate().alpha(0f).translationY(slide)
+                    .setDuration(130).setInterpolator(DecelerateInterpolator()).start()
+            }
+        }
+        (stackView.background as? GradientDrawable)?.let { bg ->
+            ValueAnimator.ofInt(255, 0).apply {
+                duration = 130
+                addUpdateListener { a -> bg.alpha = a.animatedValue as Int }
+                start()
+            }
+        }
+        mainHandler.postDelayed({
+            for (v in listOf(photoBtn, videoBtn, resultChip)) {
+                v.visibility = View.GONE
+                v.alpha = 1f
+                v.translationY = 0f
+            }
+            refreshPanel()
+            syncWindowSize()   // ✅ animated shrink: container closes DOWN onto the button
+            collapsing = false
+            // ✅ flip back to downward growth only once the shrink has fully
+            // finished - flipping mid-animation moved the button up then down
+            mainHandler.postDelayed({ maybeRestoreDirection() }, 220)
+        }, 140)
     }
 
     private fun refreshPanelAndTheme() {
@@ -695,7 +730,7 @@ class OverlayService : Service() {
             }
             refreshPanel()
             syncWindowSize()
-            maybeRestoreDirection()
+            mainHandler.postDelayed({ maybeRestoreDirection() }, 220)
         }
     }
 
