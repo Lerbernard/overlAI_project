@@ -58,15 +58,6 @@ class OverlayService : Service() {
     private lateinit var resultLabel: TextView
     private lateinit var overlayParams: WindowManager.LayoutParams
 
-    // ✅ TWO-WINDOW ARCHITECTURE: the button lives in its own tiny window
-    // that NEVER resizes or moves when the menu opens - so expanding cannot
-    // jump, by construction. The menu (photo/video/result pill) lives in a
-    // second window that simply appears above or below the button.
-    private lateinit var menuRoot: FrameLayout
-    private lateinit var menuStack: LinearLayout
-    private lateinit var menuParams: WindowManager.LayoutParams
-    private var menuAttached = false
-
     private var deleteZoneView: FrameLayout? = null
     private var deleteIcon: OutlineIconView? = null
     private var deleteZoneHighlighted = false
@@ -137,51 +128,50 @@ class OverlayService : Service() {
     private val deleteProximity: Int get() = dpToPx(48)   // ✅ only when very close
 
     /** Where the main button's top edge is on screen, regardless of direction. */
-    /** The main button's top edge on screen (button window is button-sized). */
-    private fun buttonTopOnScreen(): Int = overlayParams.y
+    private fun buttonTopOnScreen(): Int =
+        overlayParams.y + if (stackAtBottom) overlayParams.height - mainSize else 0
 
-    private fun menuMeasuredWidth(): Int {
-        menuStack.measure(
+    /** ✅ the window hugs the visible content — the empty frame no longer
+     *  exists, so touches around the bubble reach the app underneath. */
+    private fun contentHeight(): Int {
+        stackView.measure(
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-        return menuStack.measuredWidth
+        return stackView.measuredHeight + dpToPx(4)
     }
 
-    /** Place the menu window above (stackAtBottom) or below the button. */
-    private fun positionMenu() {
-        val mw = menuMeasuredWidth()
-        val btnTop = overlayParams.y
-        menuParams.gravity = (if (stackAtBottom) Gravity.BOTTOM else Gravity.TOP) or Gravity.END
-        menuParams.y =
-            if (stackAtBottom) screenHeight - btnTop + gap   // menu bottom sits gap above the button
-            else btnTop + mainSize + gap                      // menu top sits gap below the button
-        val desiredX = overlayParams.x + (mainSize - mw) / 2  // center on the button
-        menuParams.x = desiredX.coerceIn(
-            dpToPx(4), (screenWidth - mw - dpToPx(4)).coerceAtLeast(dpToPx(4)))
-    }
+    /** Resize the window to fit content, keeping the main button pinned.
+     *  Position + size change in ONE transaction — no visible jump. */
+    private var sizeAnimator: ValueAnimator? = null
 
-    private fun showMenuWindow() {
-        applyChildOrder()
-        refreshPanel()
-        positionMenu()
-        try {
-            if (!menuAttached) {
-                windowManager.addView(menuRoot, menuParams)
-                menuAttached = true
-            } else windowManager.updateViewLayout(menuRoot, menuParams)
-        } catch (_: Exception) {}
-    }
-
-    private fun moveMenuWithButton() {
-        if (!menuAttached) return
-        positionMenu()
-        try { windowManager.updateViewLayout(menuRoot, menuParams) } catch (_: Exception) {}
-    }
-
-    private fun removeMenuWindow() {
-        if (!menuAttached) return
-        menuAttached = false
-        try { windowManager.removeView(menuRoot) } catch (_: Exception) {}
+    private fun syncWindowSize() {
+        sizeAnimator?.cancel()
+        val oldH = overlayParams.height
+        val newH = contentHeight()
+        if (newH == oldH) return
+        // first-ever sizing or unknown height: snap without any y math
+        if (oldH <= 0) {
+            overlayParams.height = newH
+            overlayParams.y = clampWindowY(overlayParams.y)
+            try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+            return
+        }
+        val oldY = overlayParams.y
+        val newY = clampWindowY(if (stackAtBottom) oldY + (oldH - newH) else oldY)
+        // ✅ animate height (and y when growing upward) a few pixels per frame -
+        // the same per-frame updateViewLayout technique as the edge-snap glide,
+        // so growth renders smoothly instead of as one raw jump
+        sizeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 180
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { a ->
+                val f = a.animatedValue as Float
+                overlayParams.height = (oldH + (newH - oldH) * f).toInt()
+                overlayParams.y = (oldY + (newY - oldY) * f).toInt()
+                try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+            }
+            start()
+        }
     }
 
     /** ✅ real system insets so the bubble stays clear of the status bar
@@ -202,10 +192,15 @@ class OverlayService : Service() {
             } else dpToPx(24)
         } catch (_: Exception) { dpToPx(24) }
 
+    /** Window-y bounds that keep the main button fully on screen,
+     *  padded away from the status bar and navigation bar. */
     private fun clampWindowY(y: Int): Int {
+        val h = overlayParams.height
         val top = topInset + dpToPx(6)
         val bottom = screenHeight - bottomInset - dpToPx(6)
-        return y.coerceIn(top, (bottom - mainSize).coerceAtLeast(top))
+        val minY = if (stackAtBottom) top - (h - mainSize) else top
+        val maxY = if (stackAtBottom) bottom - h else bottom - mainSize
+        return y.coerceIn(minY, maxY.coerceAtLeast(minY))
     }
 
     private val isDarkTheme: Boolean
@@ -220,17 +215,16 @@ class OverlayService : Service() {
         setColor(ThemeHelper.overlayPanel(this@OverlayService))   // ✅ themed, borderless
     }
 
-    /** The pill panel belongs to the menu window; the button stays bare. */
+    /** Panel + growth-side padding only while more than the button is showing. */
     private fun refreshPanel() {
-        stackView.setPadding(0, 0, 0, 0)
-        stackView.background = null
         val showPanel = isExpanded || resultChip.visibility == View.VISIBLE
         if (showPanel) {
-            menuStack.setPadding(0, gap, 0, gap)
-            menuStack.background = themedPanel()
+            if (stackAtBottom) stackView.setPadding(0, gap, 0, 0)
+            else stackView.setPadding(0, 0, 0, gap)
+            stackView.background = themedPanel()
         } else {
-            menuStack.setPadding(0, 0, 0, 0)
-            menuStack.background = null
+            stackView.setPadding(0, 0, 0, 0)
+            stackView.background = null
         }
     }
 
@@ -332,66 +326,62 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.END; x = edgePadding; y = dpToPx(80) }
 
-        // ✅ the menu's own window: same type/flags as the button window,
-        // no system enter/exit animation so it appears exactly in place
-        menuStack = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-        menuRoot = FrameLayout(this).apply {
-            clipChildren = false
-            addView(menuStack, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER_HORIZONTAL))
-        }
-        menuParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            overlayParams.type,
-            overlayParams.flags,
-            overlayParams.format
-        ).apply { windowAnimations = 0 }
-        applyChildOrder()   // now that the menu exists, sort items into it
-
         refreshPanel()
         makeDraggable()
 
         resultChip.contentDescription = "Detection result — tap to dismiss"
 
+        // ✅ concrete pixel height from the start - WRAP_CONTENT (-2) in the
+        // params poisoned the expand-up math on the first open
+        overlayParams.height = contentHeight()
         windowManager.addView(rootView, overlayParams)
     }
 
     /** Stack the children so growth happens away from the main button.
      *  ✅ every gap is identical (camera↔video same as video↔result). */
     private fun applyChildOrder() {
-        // button window: only the main button, always
-        if (stackView.childCount != 1 || stackView.getChildAt(0) !== mainButton) {
-            stackView.removeAllViews()
-            (mainButton.parent as? ViewGroup)?.removeView(mainButton)
+        stackView.removeAllViews()
+        val subs = listOf(photoBtn, videoBtn, resultChip)
+        if (stackAtBottom) {
+            stackView.addView(resultChip)
+            stackView.addView(videoBtn)
+            stackView.addView(photoBtn)
             stackView.addView(mainButton)
+            subs.forEach {
+                (it.layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0; bottomMargin = gap }
+            }
+        } else {
+            stackView.addView(mainButton)
+            stackView.addView(photoBtn)
+            stackView.addView(videoBtn)
+            stackView.addView(resultChip)
+            subs.forEach {
+                (it.layoutParams as LinearLayout.LayoutParams).apply { topMargin = gap; bottomMargin = 0 }
+            }
         }
-        if (!::menuStack.isInitialized) return
-        // menu window: nearest-to-the-button first
-        menuStack.removeAllViews()
-        fun put(v: View) {
-            (v.parent as? ViewGroup)?.removeView(v)
-            menuStack.addView(v)
-        }
-        if (stackAtBottom) { put(resultChip); put(videoBtn); put(photoBtn) }
-        else { put(photoBtn); put(videoBtn); put(resultChip) }
     }
 
+    /** Flip which end of the frame the stack hugs, keeping the button pinned.
+     *  Pure integer math in ONE coordinate space — no correction needed. */
     private fun setDirectionUp(up: Boolean) {
         if (up == stackAtBottom) return
         stackAtBottom = up
+        (stackView.layoutParams as FrameLayout.LayoutParams).gravity =
+            (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
         applyChildOrder()
+        // window height equals content in both directions, so the button
+        // position is untouched by the flip itself
     }
 
-    /** back to downward growth whenever nothing but the button is showing */
     private fun maybeRestoreDirection() {
-        if (!isExpanded && resultChip.visibility != View.VISIBLE) setDirectionUp(false)
+        if (stackAtBottom && !isExpanded && resultChip.visibility != View.VISIBLE) {
+            setDirectionUp(false)
+        }
     }
+
+    // ---------------------------------------------------------------------
+    // Expand / collapse — pure view animation inside the fixed frame
+    // ---------------------------------------------------------------------
 
     private fun expandMenu() {
         if (isExpanded) return
@@ -404,11 +394,11 @@ class OverlayService : Service() {
 
         refreshPanelAndTheme()
 
-        photoBtn.visibility = View.VISIBLE
-        videoBtn.visibility = View.VISIBLE
-        showMenuWindow()   // ✅ separate window appears - the button never moves
-
         val slide = dpToPx(14).toFloat() * (if (stackAtBottom) 1f else -1f)
+        for (b in listOf(photoBtn, videoBtn)) {
+            b.visibility = View.VISIBLE
+        }
+        syncWindowSize()   // ✅ grow the window (atomic with the y shift)
         for (b in listOf(photoBtn, videoBtn)) {
             b.alpha = 0f
             b.translationY = slide
@@ -431,24 +421,11 @@ class OverlayService : Service() {
         photoBtn.visibility = View.GONE
         videoBtn.visibility = View.GONE
         resultChip.visibility = View.GONE
-        removeMenuWindow()   // ✅ the menu window simply disappears
         mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
         mainButton.setGlyphTint(PURPLE)
         refreshPanel()
+        syncWindowSize()   // ✅ shrink back to just the visible content
         maybeRestoreDirection()
-    }
-
-    /** hard reset used on rotation: dismiss menu + chip unconditionally */
-    private fun forceDismissMenu() {
-        isExpanded = false
-        photoBtn.visibility = View.GONE
-        videoBtn.visibility = View.GONE
-        resultChip.visibility = View.GONE
-        mainButton.setModeAndRedraw(OutlineIconView.Mode.PLUS)
-        mainButton.setGlyphTint(PURPLE)
-        removeMenuWindow()
-        stackAtBottom = false
-        applyChildOrder()
     }
 
     private fun refreshPanelAndTheme() {
@@ -504,7 +481,7 @@ class OverlayService : Service() {
                     if (dragging) {
                         overlayParams.x = (startX - dx).toInt()   // ✅ free follow, clamp on release
                         overlayParams.y = clampWindowY((startY + dy).toInt())
-                        try { windowManager.updateViewLayout(rootView, overlayParams); moveMenuWithButton() } catch (_: Exception) {}
+                        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
                         setDeleteZoneHighlight(isNearTrash(event.rawX, event.rawY))
                     }
                     true
@@ -561,10 +538,9 @@ class OverlayService : Service() {
 
     private fun makeDraggable() {
         attachDrag(mainButton) { handleMainTap() }
-        // ✅ menu items live in their own window: plain tap targets now
-        photoBtn.setOnClickListener { requestProjection(mode = "photo") }
-        videoBtn.setOnClickListener { requestProjection(mode = "video") }
-        resultChip.setOnClickListener { if (isRecording) stopRecording() else hideResultChip() }
+        attachDrag(photoBtn) { requestProjection(mode = "photo") }
+        attachDrag(videoBtn) { requestProjection(mode = "video") }
+        attachDrag(resultChip) { if (isRecording) stopRecording() else hideResultChip() }
     }
 
     /** YouTube-PiP style throw: velocity picks the edge, momentum carries y. */
@@ -599,7 +575,7 @@ class OverlayService : Service() {
                 val f = a.animatedValue as Float
                 overlayParams.x = (startX + (targetX - startX) * f).toInt()
                 overlayParams.y = (startY + (targetY - startY) * f).toInt()
-                try { windowManager.updateViewLayout(rootView, overlayParams); moveMenuWithButton() } catch (_: Exception) {}
+                try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
             }
             start()
         }
@@ -700,7 +676,8 @@ class OverlayService : Service() {
                 srcBtn.translationY = 0f
             }
             resultChip.visibility = View.VISIBLE
-            showMenuWindow()
+            refreshPanel()
+            syncWindowSize()
             resultChip.alpha = 0f
             resultChip.translationY = dpToPx(10).toFloat() * (if (stackAtBottom) 1f else -1f)
             resultChip.animate().alpha(1f).translationY(0f)
@@ -717,7 +694,7 @@ class OverlayService : Service() {
                 videoBtn.visibility = View.GONE
             }
             refreshPanel()
-            if (!isExpanded) removeMenuWindow() else moveMenuWithButton()
+            syncWindowSize()
             maybeRestoreDirection()
         }
     }
@@ -772,7 +749,7 @@ class OverlayService : Service() {
 
     private fun performCapture(mp: MediaProjection) {
         isProcessing = true
-        rootView.visibility = View.GONE; menuRoot.visibility = View.GONE
+        rootView.visibility = View.GONE
         updateStatus("...")
 
         mainHandler.postDelayed({
@@ -817,7 +794,7 @@ class OverlayService : Service() {
                     val isCropEnabled = prefs.getBoolean("use_crop", true)
 
                     mainHandler.post {
-                        rootView.visibility = View.VISIBLE; menuRoot.visibility = View.VISIBLE
+                        rootView.visibility = View.VISIBLE
 
                         val inputFile = File(cacheDir, "input.png")
                         var saved = false
@@ -923,7 +900,7 @@ class OverlayService : Service() {
         stopForegroundCompat()
 
         if (ok && recordFile.exists() && recordFile.length() > 0) {
-            // ✅ stopping auto-sends; "..." = checking (it never needed a tap)
+            // ✅ stopping auto-sends the video; "..." = checking in progress
             updateStatus("...")
             runVideoDetection(recordFile)
         } else {
@@ -941,15 +918,17 @@ class OverlayService : Service() {
         DetectionClient.detectVideo(this, file,
             onResult = { pct ->
                 updateStatus("$pct%")
+                // ✅ keep a persistent copy so the video is watchable in History
+                val saved = HistoryManager.saveVideoCopy(this, file)
                 try {
                     val retriever = MediaMetadataRetriever()
                     retriever.setDataSource(file.absolutePath)
                     val frame = retriever.getFrameAtTime(0)
                     retriever.release()
-                    HistoryManager.add(this, pct, "Video", frame)
+                    HistoryManager.add(this, pct, "Video", frame, saved)
                     frame?.recycle()
                 } catch (_: Exception) {
-                    HistoryManager.add(this, pct, "Video", null)
+                    HistoryManager.add(this, pct, "Video", null, saved)
                 }
                 file.delete()
             },
@@ -965,7 +944,7 @@ class OverlayService : Service() {
 
     private fun resetAfterCapture(status: String) {
         isProcessing = false
-        rootView.visibility = View.VISIBLE; menuRoot.visibility = View.VISIBLE
+        rootView.visibility = View.VISIBLE
         showResultChip()
         failStatus(status)
         stopForegroundCompat()
@@ -1130,15 +1109,16 @@ class OverlayService : Service() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         // ✅ rotation: re-clamp so the bubble can't be stranded off-screen
-        forceDismissMenu()
+        if (isExpanded) collapseMenu()
         hideDeleteZone()
         overlayParams.x = overlayParams.x.coerceIn(
             0, (screenWidth - rootView.width - edgePadding).coerceAtLeast(0))
         overlayParams.y = clampWindowY(overlayParams.y)
-        try { windowManager.updateViewLayout(rootView, overlayParams); moveMenuWithButton() } catch (_: Exception) {}
+        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
+        sizeAnimator?.cancel()
         if (isRecording) {
             isRecording = false
             mainHandler.removeCallbacks(timerRunnable)
@@ -1150,7 +1130,6 @@ class OverlayService : Service() {
         hideDeleteZone()
         xAnimator?.cancel()
         try { reallyStopForeground() } catch (_: Exception) {}
-        removeMenuWindow()
         try { windowManager.removeView(rootView) } catch (_: Exception) {}
         isRunning = false
         OverlayTileService.refresh(this)

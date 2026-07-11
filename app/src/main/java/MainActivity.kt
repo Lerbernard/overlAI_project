@@ -239,7 +239,26 @@ class MainActivity : AppCompatActivity() {
                 val bmp: Bitmap? = e.thumbPath?.let { decodeSampled(it, dp(56)) }   // ✅ sampled
                 if (bmp != null) setImageBitmap(bmp)
             }
-            row.addView(thumb)
+            // ✅ video entries get a centered play badge on the thumbnail
+            if (e.videoPath != null && java.io.File(e.videoPath).exists()) {
+                row.addView(FrameLayout(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(14) }
+                    thumb.layoutParams = FrameLayout.LayoutParams(dp(48), dp(48))
+                    addView(thumb)
+                    addView(TextView(this@MainActivity).apply {
+                        text = "\u25B6"
+                        textSize = 11f
+                        setTextColor(Color.WHITE)
+                        gravity = Gravity.CENTER
+                        setPadding(dp(2), 0, 0, 0)
+                        background = GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(Color.argb(150, 20, 20, 24))
+                        }
+                        layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+                    })
+                })
+            } else row.addView(thumb)
 
             // Middle: source + date
             val mid = LinearLayout(this).apply {
@@ -327,9 +346,14 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(300)
                 ).apply { bottomMargin = dp(16) }
-                // ✅ tap the image to open it fullscreen
+                // ✅ tap: videos play (centered play button, no autoplay);
+                // images open fullscreen as before
                 isClickable = true
-                setOnClickListener { showFullImage(e.thumbPath!!) }
+                setOnClickListener {
+                    val vp = e.videoPath
+                    if (vp != null && java.io.File(vp).exists()) VideoPlayerDialog.show(this@MainActivity, vp)
+                    else showFullImage(e.thumbPath!!)
+                }
             })
         }
 

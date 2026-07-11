@@ -42,6 +42,7 @@ class DetectorFragment : Fragment() {
     private lateinit var valConfidence: TextView
     private lateinit var valType: TextView
     private var lastIsVideo = false
+    private var lastVideoPath: String? = null   // ✅ playable saved copy
     private var lastPreviewBmp: Bitmap? = null
     private var session = 0
     private lateinit var emptyIconWrap: android.widget.FrameLayout
@@ -182,13 +183,16 @@ class DetectorFragment : Fragment() {
         } catch (_: Exception) {}
         frame?.let { showPreview(it, isVideo = true) }
 
+        // ✅ keep a playable copy for the preview + History
+        lastVideoPath = HistoryManager.saveVideoCopy(requireContext(), file)
+
         setLoading()
         val s = ++session
         DetectionClient.detectVideo(requireContext(), file,
             onResult = { pct ->
                 if (s != session || !isAdded) return@detectVideo
                 showResult(pct)
-                try { HistoryManager.add(requireContext(), pct, "Video", frame) } catch (_: Exception) {}
+                try { HistoryManager.add(requireContext(), pct, "Video", frame, lastVideoPath) } catch (_: Exception) {}
             },
             onError = { msg ->
                 if (s != session || !isAdded) return@detectVideo
@@ -217,15 +221,45 @@ class DetectorFragment : Fragment() {
 
     private fun showPreview(bmp: Bitmap, isVideo: Boolean) {
         lastIsVideo = isVideo
+        if (!isVideo) lastVideoPath = null
         emptyState.visibility = View.GONE
         previewCard.visibility = View.VISIBLE
-        previewImage.setImageBitmap(bmp)
+        // ✅ videos get a centered play badge drawn onto the preview
+        previewImage.setImageBitmap(if (isVideo) withPlayBadge(bmp) else bmp)
         lastPreviewBmp = bmp
         videoBadge.visibility = if (isVideo) View.VISIBLE else View.GONE
     }
 
-    /** ✅ tap the preview to view it fullscreen */
+    /** ✅ composite a centered play button onto a video preview frame */
+    private fun withPlayBadge(src: Bitmap): Bitmap {
+        return try {
+            val out = src.copy(Bitmap.Config.ARGB_8888, true)
+            val c = android.graphics.Canvas(out)
+            val cx = out.width / 2f
+            val cy = out.height / 2f
+            val r = minOf(out.width, out.height) * 0.13f
+            val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            p.color = Color.argb(170, 20, 20, 24)
+            c.drawCircle(cx, cy, r, p)
+            p.color = Color.WHITE
+            val tri = android.graphics.Path().apply {
+                moveTo(cx - r * 0.28f, cy - r * 0.45f)
+                lineTo(cx - r * 0.28f, cy + r * 0.45f)
+                lineTo(cx + r * 0.52f, cy)
+                close()
+            }
+            c.drawPath(tri, p)
+            out
+        } catch (_: Exception) { src }
+    }
+
+    /** ✅ tap the preview: videos play (no autoplay), images go fullscreen */
     private fun showFullPreview() {
+        val vp = lastVideoPath
+        if (lastIsVideo && vp != null && java.io.File(vp).exists()) {
+            VideoPlayerDialog.show(requireContext(), vp)
+            return
+        }
         val bmp = lastPreviewBmp ?: return
         val d = android.app.Dialog(requireContext(),
             android.R.style.Theme_Black_NoTitleBar_Fullscreen)
