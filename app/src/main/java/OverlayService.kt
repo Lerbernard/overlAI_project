@@ -129,7 +129,8 @@ class OverlayService : Service() {
 
     /** Where the main button's top edge is on screen, regardless of direction. */
     private fun buttonTopOnScreen(): Int =
-        overlayParams.y + if (stackAtBottom) overlayParams.height - mainSize else 0
+        if (stackAtBottom) (screenHeight - overlayParams.y) - mainSize
+        else overlayParams.y
 
     /** ✅ the window hugs the visible content — the empty frame no longer
      *  exists, so touches around the bubble reach the app underneath. */
@@ -143,13 +144,31 @@ class OverlayService : Service() {
     /** Resize the window to fit content, keeping the main button pinned.
      *  Position + size change in ONE transaction — no visible jump. */
     private fun syncWindowSize() {
-        val oldH = overlayParams.height
-        val newH = contentHeight()
-        if (newH == oldH) return
-        if (stackAtBottom) overlayParams.y += oldH - newH
-        overlayParams.height = newH
+        heightAnimator?.cancel()
+        val from = overlayParams.height
+        val to = contentHeight()
+        if (to == from) return
         overlayParams.y = clampWindowY(overlayParams.y)
-        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+        // first-ever sizing (or tiny deltas): just snap
+        if (from <= 0 || kotlin.math.abs(to - from) < dpToPx(8)) {
+            overlayParams.height = to
+            try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+            return
+        }
+        // ✅ animate the height a few pixels per frame - the same per-frame
+        // updateViewLayout technique as the edge-snap glide. The window is
+        // anchored at the button's edge (top-anchored growing down, bottom-
+        // anchored growing up), so the button never moves and the panel
+        // unfolds smoothly in BOTH directions.
+        heightAnimator = ValueAnimator.ofInt(from, to).apply {
+            duration = 190
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { a ->
+                overlayParams.height = a.animatedValue as Int
+                try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+            }
+            start()
+        }
     }
 
     /** ✅ real system insets so the bubble stays clear of the status bar
@@ -173,12 +192,17 @@ class OverlayService : Service() {
     /** Window-y bounds that keep the main button fully on screen,
      *  padded away from the status bar and navigation bar. */
     private fun clampWindowY(y: Int): Int {
-        val h = overlayParams.height
         val top = topInset + dpToPx(6)
         val bottom = screenHeight - bottomInset - dpToPx(6)
-        val minY = if (stackAtBottom) top - (h - mainSize) else top
-        val maxY = if (stackAtBottom) bottom - h else bottom - mainSize
-        return y.coerceIn(minY, maxY.coerceAtLeast(minY))
+        return if (stackAtBottom) {
+            // y = gap between the window's BOTTOM edge and the screen bottom
+            val minY = screenHeight - bottom               // button clear of nav bar
+            val maxY = screenHeight - top - mainSize       // button clear of status bar
+            y.coerceIn(minY, maxY.coerceAtLeast(minY))
+        } else {
+            // y = offset of the window's TOP edge from the screen top
+            y.coerceIn(top, (bottom - mainSize).coerceAtLeast(top))
+        }
     }
 
     private val isDarkTheme: Boolean
@@ -309,6 +333,8 @@ class OverlayService : Service() {
 
         resultChip.contentDescription = "Detection result — tap to dismiss"
 
+        // ✅ concrete pixel height from the start (WRAP_CONTENT poisons math)
+        overlayParams.height = contentHeight()
         windowManager.addView(rootView, overlayParams)
     }
 
@@ -340,12 +366,21 @@ class OverlayService : Service() {
      *  Pure integer math in ONE coordinate space — no correction needed. */
     private fun setDirectionUp(up: Boolean) {
         if (up == stackAtBottom) return
+        // ✅ the button's screen position is the one thing that must not move
+        val btnTop = buttonTopOnScreen()
         stackAtBottom = up
         (stackView.layoutParams as FrameLayout.LayoutParams).gravity =
             (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
         applyChildOrder()
-        // window height equals content in both directions, so the button
-        // position is untouched by the flip itself
+        // ✅ flip the WINDOW anchor to match the growth direction: bottom-
+        // anchored while growing up, top-anchored while growing down. Then a
+        // height change alone always grows away from the pinned button.
+        overlayParams.gravity = (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.END
+        overlayParams.y =
+            if (up) screenHeight - (btnTop + mainSize)   // gap below the button
+            else btnTop                                   // offset above the button
+        overlayParams.y = clampWindowY(overlayParams.y)
+        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
     }
 
     private fun maybeRestoreDirection() {
@@ -418,6 +453,7 @@ class OverlayService : Service() {
     // ---------------------------------------------------------------------
 
     private var xAnimator: ValueAnimator? = null
+    private var heightAnimator: ValueAnimator? = null
 
     /** ✅ Attach move/throw handling to a view. A tap runs onTap; a drag moves
      *  the whole overlay — applied to every element so the expanded stack can
@@ -455,7 +491,8 @@ class OverlayService : Service() {
                     }
                     if (dragging) {
                         overlayParams.x = (startX - dx).toInt()   // ✅ free follow, clamp on release
-                        overlayParams.y = clampWindowY((startY + dy).toInt())
+                        val sdy = if (stackAtBottom) -dy else dy   // ✅ bottom-ref y grows upward
+                        overlayParams.y = clampWindowY((startY + sdy).toInt())
                         try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
                         setDeleteZoneHighlight(isNearTrash(event.rawX, event.rawY))
                     }
@@ -532,7 +569,7 @@ class OverlayService : Service() {
             else -> leftX
         }
 
-        val projected = (vy * 0.18f).toInt()
+        val projected = (vy * 0.18f).toInt() * (if (stackAtBottom) -1 else 1)
         val targetY = clampWindowY(overlayParams.y + projected)
 
         val startX = overlayParams.x
@@ -1090,6 +1127,7 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        heightAnimator?.cancel()
         if (isRecording) {
             isRecording = false
             mainHandler.removeCallbacks(timerRunnable)
