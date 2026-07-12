@@ -71,7 +71,9 @@ class OverlayService : Service() {
     private var isProcessing = false
     private var isRecording = false
     private var recordStartMs = 0L
-    private var stackAtBottom = false     // stack gravitates to frame bottom = grows upward
+    // ✅ the stack ALWAYS grows downward now; if the menu would run off the
+    // bottom, the whole bubble slides up so it fits with padding instead.
+    private val stackAtBottom = false
     private var lastMode = "photo"        // which source produced the pending result
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -144,11 +146,36 @@ class OverlayService : Service() {
      *  Position + size change in ONE transaction — no visible jump. */
     private var sizeAnimator: ValueAnimator? = null
 
+    /** ✅ if the (about to be) expanded menu would run past the bottom edge,
+     *  slide the whole bubble up just enough that it fits with padding. */
+    private fun ensureExpandedFitsOnScreen(targetH: Int) {
+        val bottomLimit = screenHeight - bottomInset - dpToPx(6)
+        val overflow = (overlayParams.y + targetH) - bottomLimit
+        if (overflow > 0) {
+            val newY = clampWindowY(overlayParams.y - overflow)
+            if (newY != overlayParams.y) {
+                val fromY = overlayParams.y
+                ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = 160
+                    interpolator = DecelerateInterpolator()
+                    addUpdateListener { a ->
+                        val f = a.animatedValue as Float
+                        overlayParams.y = (fromY + (newY - fromY) * f).toInt()
+                        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
+                    }
+                    start()
+                }
+            }
+        }
+    }
+
     private fun syncWindowSize() {
         sizeAnimator?.cancel()
         val oldH = overlayParams.height
         val newH = contentHeight()
         if (newH == oldH) return
+        // ✅ make room first when growing
+        if (newH > oldH && oldH > 0) ensureExpandedFitsOnScreen(newH)
         // first-ever sizing or unknown height: snap without any y math
         if (oldH <= 0) {
             overlayParams.height = newH
@@ -197,12 +224,11 @@ class OverlayService : Service() {
     /** Window-y bounds that keep the main button fully on screen,
      *  padded away from the status bar and navigation bar. */
     private fun clampWindowY(y: Int): Int {
-        val h = overlayParams.height
+        // ✅ always top-anchored now: y is simply the button's top edge, kept
+        // clear of the status bar and the nav bar
         val top = topInset + dpToPx(6)
         val bottom = screenHeight - bottomInset - dpToPx(6)
-        val minY = if (stackAtBottom) top - (h - mainSize) else top
-        val maxY = if (stackAtBottom) bottom - h else bottom - mainSize
-        return y.coerceIn(minY, maxY.coerceAtLeast(minY))
+        return y.coerceIn(top, (bottom - mainSize).coerceAtLeast(top))
     }
 
     private val isDarkTheme: Boolean
@@ -363,44 +389,14 @@ class OverlayService : Service() {
         }
     }
 
-    private fun setDirectionUp(up: Boolean) {
-        if (up == stackAtBottom) return
-        sizeAnimator?.cancel()   // ✅ never flip mid-resize
-        val h = overlayParams.height
-        stackAtBottom = up
-        (stackView.layoutParams as FrameLayout.LayoutParams).gravity =
-            (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
-        applyChildOrder()
-        // ✅ with the window sized exactly to content, a collapsed flip is a
-        // geometric no-op (same rect under both gravities). Only when extra
-        // content (the result chip) is visible does the button's slot move -
-        // compensate y; the sync that always follows applies it in the same
-        // frame as the re-layout, so nothing renders in between.
-        if (h > mainSize) {
-            overlayParams.y += if (up) -(h - mainSize) else (h - mainSize)
-            overlayParams.y = clampWindowY(overlayParams.y)
-        }
-    }
-
-    private fun maybeRestoreDirection() {
-        if (stackAtBottom && !isExpanded && resultChip.visibility != View.VISIBLE) {
-            setDirectionUp(false)
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    // Expand / collapse — pure view animation inside the fixed frame
-    // ---------------------------------------------------------------------
+    /** ✅ direction flipping is gone - the stack always grows downward. */
+    private fun setDirectionUp(up: Boolean) { /* no-op */ }
+    private fun maybeRestoreDirection() { /* no-op */ }
 
     private fun expandMenu() {
         if (isExpanded || collapsing) return
         isExpanded = true
 
-        if (!stackAtBottom) {
-            val centerY = buttonTopOnScreen() + mainSize / 2
-            // ✅ only the bottom 10% of the screen expands upward
-            if (centerY > screenHeight * 0.9) setDirectionUp(true)
-        }
 
         refreshPanelAndTheme()
 
@@ -699,11 +695,6 @@ class OverlayService : Service() {
     private fun showResultChip() {
         mainHandler.post {
             if (resultChip.visibility == View.VISIBLE) return@post
-            if (!stackAtBottom && !isExpanded) {
-                val centerY = buttonTopOnScreen() + mainSize / 2
-                // ✅ only the bottom 10% of the screen expands upward
-            if (centerY > screenHeight * 0.9) setDirectionUp(true)
-            }
             // ✅ the result expands beneath the actual button that was tapped
             if (!isExpanded) {
                 val srcBtn = if (lastMode == "video") videoBtn else photoBtn
