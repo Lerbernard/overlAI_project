@@ -11,11 +11,19 @@ object Premium {
     private const val PREFS = "app_settings"
     private const val KEY = "premium_active"
 
+    /**
+     * ✅ TESTING DEFAULT: premium (ad-free) is ON for fresh installs, so
+     * closed-test users get the full experience with no ads. The Settings
+     * toggle still turns it off/on.
+     *
+     * ⚠️ BEFORE PRODUCTION: change TEST_DEFAULT_PREMIUM back to false when
+     * Play Billing goes live, or the paid tier ships free to everyone.
+     */
+    private const val TEST_DEFAULT_PREMIUM = true
+
     fun isActive(context: Context): Boolean =
-        // ✅ TESTING DEFAULT: premium (ad-free) is ON for fresh installs.
-        // The Settings toggle still works both ways. Flip back to `false`
-        // before production / when Play Billing lands.
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, true)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY, TEST_DEFAULT_PREMIUM)
 
     /** Called by the purchase flow (placeholder now, Play Billing later). */
     fun setPremium(context: Context, active: Boolean) {

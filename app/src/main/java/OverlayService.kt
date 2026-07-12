@@ -146,36 +146,11 @@ class OverlayService : Service() {
      *  Position + size change in ONE transaction — no visible jump. */
     private var sizeAnimator: ValueAnimator? = null
 
-    /** ✅ if the (about to be) expanded menu would run past the bottom edge,
-     *  slide the whole bubble up just enough that it fits with padding. */
-    private fun ensureExpandedFitsOnScreen(targetH: Int) {
-        val bottomLimit = screenHeight - bottomInset - dpToPx(6)
-        val overflow = (overlayParams.y + targetH) - bottomLimit
-        if (overflow > 0) {
-            val newY = clampWindowY(overlayParams.y - overflow)
-            if (newY != overlayParams.y) {
-                val fromY = overlayParams.y
-                ValueAnimator.ofFloat(0f, 1f).apply {
-                    duration = 160
-                    interpolator = DecelerateInterpolator()
-                    addUpdateListener { a ->
-                        val f = a.animatedValue as Float
-                        overlayParams.y = (fromY + (newY - fromY) * f).toInt()
-                        try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
-                    }
-                    start()
-                }
-            }
-        }
-    }
-
     private fun syncWindowSize() {
         sizeAnimator?.cancel()
         val oldH = overlayParams.height
         val newH = contentHeight()
         if (newH == oldH) return
-        // ✅ make room first when growing
-        if (newH > oldH && oldH > 0) ensureExpandedFitsOnScreen(newH)
         // first-ever sizing or unknown height: snap without any y math
         if (oldH <= 0) {
             overlayParams.height = newH
@@ -188,19 +163,33 @@ class OverlayService : Service() {
         //    growing up   -> the BOTTOM edge: y is DERIVED from the height
         //    each frame (y = anchor - h), integer-exact, so the button
         //    cannot drift even one pixel while the container animates
-        val bottomAnchor = overlayParams.y + oldH
+        val fromY = overlayParams.y
+        // ✅ where the button must end up so the FULL expanded menu fits on
+        // screen with padding - computed for the FINAL height, so the result
+        // chip growing the panel later can't push it off the bottom either
+        val toY = fitYFor(newH)
         sizeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 180
             interpolator = DecelerateInterpolator()
             addUpdateListener { a ->
                 val f = a.animatedValue as Float
-                val h = (oldH + (newH - oldH) * f).toInt()
-                overlayParams.height = h
-                if (stackAtBottom) overlayParams.y = bottomAnchor - h
+                // height and position move as ONE motion: at every frame the
+                // window is fully on-screen, never overhanging
+                overlayParams.height = (oldH + (newH - oldH) * f).toInt()
+                overlayParams.y = (fromY + (toY - fromY) * f).toInt()
                 try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
             }
             start()
         }
+    }
+
+    /** ✅ the highest y the button may sit at so a window of [h] px still
+     *  fits above the nav bar; never pushes the button off the top. */
+    private fun fitYFor(h: Int): Int {
+        val top = topInset + dpToPx(6)
+        val bottomLimit = screenHeight - bottomInset - dpToPx(6)
+        val maxY = bottomLimit - h            // keep the whole window on screen
+        return overlayParams.y.coerceIn(top, maxY.coerceAtLeast(top))
     }
 
     /** ✅ real system insets so the bubble stays clear of the status bar
