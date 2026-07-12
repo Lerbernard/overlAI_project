@@ -76,7 +76,10 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<PillToggleView>(R.id.autoOffSwitch)?.apply {
             configure("ON", "OFF", greyOff = true)
-            onToggle = { checked -> prefs.edit().putBoolean("auto_off", checked).apply() }
+            onToggle = { checked ->
+                prefs.edit().putBoolean("auto_off", checked).apply()
+                refreshAutoOffRow()
+            }
         }
 
         findViewById<PillToggleView>(R.id.themeSwitch)?.apply {
@@ -898,6 +901,42 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Bug report submitted - thank you!", Toast.LENGTH_SHORT).show()
     }
 
+    // ---------- ✅ auto turn-off delay ----------
+    private val autoOffOptions = listOf(
+        15 to "15 minutes", 30 to "30 minutes", 60 to "1 hour",
+        120 to "2 hours", 240 to "4 hours"
+    )
+
+    private fun refreshAutoOffRow() {
+        val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+        val on = prefs.getBoolean("auto_off", true)
+        val mins = prefs.getInt("auto_off_minutes", 60)
+        findViewById<LinearLayout>(R.id.autoOffDelayRow)?.visibility =
+            if (on) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.autoOffDelayValue)?.apply {
+            text = autoOffOptions.firstOrNull { it.first == mins }?.second ?: "1 hour"
+            setTextColor(ThemeHelper.primary(this@MainActivity))
+        }
+    }
+
+    private fun setupAutoOffDelay() {
+        refreshAutoOffRow()
+        findViewById<LinearLayout>(R.id.autoOffDelayRow)?.setOnClickListener {
+            val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+            val current = prefs.getInt("auto_off_minutes", 60)
+            val labels = autoOffOptions.map { it.second }.toTypedArray()
+            val checked = autoOffOptions.indexOfFirst { it.first == current }.coerceAtLeast(0)
+            val b = android.app.AlertDialog.Builder(this)
+                .setSingleChoiceItems(labels, checked) { d, which ->
+                    prefs.edit().putInt("auto_off_minutes", autoOffOptions[which].first).apply()
+                    refreshAutoOffRow()
+                    d.dismiss()
+                }
+                .setNegativeButton("Cancel", null)
+            showThemed(b, "Turn off after")
+        }
+    }
+
     /** ✅ scrollable popup for Terms / Privacy */
     private fun showLegalDialog(title: String, body: String) {
         val t = ThemeHelper
@@ -999,9 +1038,10 @@ These terms may be updated as the app evolves; continued use means acceptance of
             applyThemeColors()
         }
         findViewById<PillToggleView>(R.id.autoOffSwitch)?.apply {
-            setChecked(prefs.getBoolean("auto_off", false))
+            setChecked(prefs.getBoolean("auto_off", true))
             applyThemeColors()
         }
+        setupAutoOffDelay()
         findViewById<PillToggleView>(R.id.themeSwitch)?.apply {
             setChecked(ThemeHelper.isDark(this@MainActivity))
             applyThemeColors()

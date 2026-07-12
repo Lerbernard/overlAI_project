@@ -257,7 +257,7 @@ class OverlayService : Service() {
         OverlayTileService.refresh(this)
         OverlayWidgetProvider.updateAll(this)
         OverlayStatsWidget.updateAll(this)
-        mainHandler.postDelayed(autoOffCheck, 5 * 60_000L)
+        mainHandler.postDelayed(autoOffCheck, 60_000L)
     }
 
     /** Foreground with the right type: specialUse while idle, +mediaProjection
@@ -569,7 +569,7 @@ class OverlayService : Service() {
         xAnimator?.cancel()
         val minFling = 600f
 
-        val leftX = (screenWidth - rootView.width - edgePadding).coerceAtLeast(0)
+        val leftX = (screenWidth - mainSize - edgePadding).coerceAtLeast(0)
         val rightX = edgePadding
         val targetX = when {
             vx > minFling -> rightX
@@ -737,14 +737,16 @@ class OverlayService : Service() {
     private var lastUseMs = System.currentTimeMillis()
     private val autoOffCheck = object : Runnable {
         override fun run() {
-            val enabled = getSharedPreferences("app_settings", MODE_PRIVATE)
-                .getBoolean("auto_off", false)
+            val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+            // ✅ auto-off is ON by default; the delay is user-selectable
+            val enabled = prefs.getBoolean("auto_off", true)
+            val minutes = prefs.getInt("auto_off_minutes", 60)
             if (enabled && !isRecording && !isProcessing &&
-                System.currentTimeMillis() - lastUseMs > 60 * 60_000L) {
+                System.currentTimeMillis() - lastUseMs > minutes * 60_000L) {
                 stopSelf()
                 return
             }
-            mainHandler.postDelayed(this, 5 * 60_000L)
+            mainHandler.postDelayed(this, 60_000L)   // re-check each minute
         }
     }
 
@@ -1129,7 +1131,7 @@ class OverlayService : Service() {
         if (isExpanded) collapseMenu()
         hideDeleteZone()
         overlayParams.x = overlayParams.x.coerceIn(
-            0, (screenWidth - rootView.width - edgePadding).coerceAtLeast(0))
+            0, (screenWidth - mainSize - edgePadding).coerceAtLeast(0))
         overlayParams.y = clampWindowY(overlayParams.y)
         try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
     }
