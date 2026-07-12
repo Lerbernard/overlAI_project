@@ -12,7 +12,10 @@ object Premium {
     private const val KEY = "premium_active"
 
     fun isActive(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
+        // ✅ TESTING DEFAULT: premium (ad-free) is ON for fresh installs.
+        // The Settings toggle still works both ways. Flip back to `false`
+        // before production / when Play Billing lands.
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, true)
 
     /** Called by the purchase flow (placeholder now, Play Billing later). */
     fun setPremium(context: Context, active: Boolean) {

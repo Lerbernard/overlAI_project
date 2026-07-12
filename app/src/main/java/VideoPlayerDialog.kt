@@ -45,8 +45,12 @@ object VideoPlayerDialog {
 
         val frame = FrameLayout(context).apply {
             setBackgroundColor(Color.BLACK)
+            minimumHeight = dp(360)   // steady dialog size while the video loads
+            // ✅ WRAP + center = the VideoView keeps the video's own aspect
+            // ratio and letterboxes inside the frame instead of stretching
             addView(video, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(420), Gravity.CENTER))
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
             addView(playBtn)
         }
 

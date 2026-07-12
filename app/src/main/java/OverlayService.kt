@@ -137,7 +137,7 @@ class OverlayService : Service() {
         stackView.measure(
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-        return stackView.measuredHeight + dpToPx(4)
+        return stackView.measuredHeight   // ✅ exact: collapsed flips move nothing
     }
 
     /** Resize the window to fit content, keeping the main button pinned.
@@ -156,18 +156,20 @@ class OverlayService : Service() {
             try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
             return
         }
-        val oldY = overlayParams.y
-        val newY = clampWindowY(if (stackAtBottom) oldY + (oldH - newH) else oldY)
-        // ✅ animate height (and y when growing upward) a few pixels per frame -
-        // the same per-frame updateViewLayout technique as the edge-snap glide,
-        // so growth renders smoothly instead of as one raw jump
+        // ✅ the button edge that must stay pixel-fixed:
+        //    growing down -> the TOP edge (y is simply never touched)
+        //    growing up   -> the BOTTOM edge: y is DERIVED from the height
+        //    each frame (y = anchor - h), integer-exact, so the button
+        //    cannot drift even one pixel while the container animates
+        val bottomAnchor = overlayParams.y + oldH
         sizeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 180
             interpolator = DecelerateInterpolator()
             addUpdateListener { a ->
                 val f = a.animatedValue as Float
-                overlayParams.height = (oldH + (newH - oldH) * f).toInt()
-                overlayParams.y = (oldY + (newY - oldY) * f).toInt()
+                val h = (oldH + (newH - oldH) * f).toInt()
+                overlayParams.height = h
+                if (stackAtBottom) overlayParams.y = bottomAnchor - h
                 try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
             }
             start()
@@ -361,8 +363,6 @@ class OverlayService : Service() {
         }
     }
 
-    /** Flip which end of the frame the stack hugs, keeping the button pinned.
-     *  Pure integer math in ONE coordinate space — no correction needed. */
     private fun setDirectionUp(up: Boolean) {
         if (up == stackAtBottom) return
         sizeAnimator?.cancel()   // ✅ never flip mid-resize
@@ -371,14 +371,14 @@ class OverlayService : Service() {
         (stackView.layoutParams as FrameLayout.LayoutParams).gravity =
             (if (up) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
         applyChildOrder()
-        // ✅ the button's slot inside the frame moves between the top and
-        // bottom edge when the stack flips - shift the window the opposite
-        // way by exactly that distance so the button stays pixel-fixed
-        // (matters most when the result chip is visible during the flip)
-        if (h > 0 && h != mainSize) {
+        // ✅ with the window sized exactly to content, a collapsed flip is a
+        // geometric no-op (same rect under both gravities). Only when extra
+        // content (the result chip) is visible does the button's slot move -
+        // compensate y; the sync that always follows applies it in the same
+        // frame as the re-layout, so nothing renders in between.
+        if (h > mainSize) {
             overlayParams.y += if (up) -(h - mainSize) else (h - mainSize)
             overlayParams.y = clampWindowY(overlayParams.y)
-            try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
         }
     }
 
@@ -398,7 +398,8 @@ class OverlayService : Service() {
 
         if (!stackAtBottom) {
             val centerY = buttonTopOnScreen() + mainSize / 2
-            if (centerY > screenHeight * 0.7) setDirectionUp(true)
+            // ✅ only the bottom 10% of the screen expands upward
+            if (centerY > screenHeight * 0.9) setDirectionUp(true)
         }
 
         refreshPanelAndTheme()
@@ -700,7 +701,8 @@ class OverlayService : Service() {
             if (resultChip.visibility == View.VISIBLE) return@post
             if (!stackAtBottom && !isExpanded) {
                 val centerY = buttonTopOnScreen() + mainSize / 2
-                if (centerY > screenHeight * 0.7) setDirectionUp(true)
+                // ✅ only the bottom 10% of the screen expands upward
+            if (centerY > screenHeight * 0.9) setDirectionUp(true)
             }
             // ✅ the result expands beneath the actual button that was tapped
             if (!isExpanded) {
