@@ -151,6 +151,8 @@ class OverlayService : Service() {
         val oldH = overlayParams.height
         val newH = contentHeight()
         if (newH == oldH) return
+        // ✅ the drag clamp during a collapsed drag only reserved the button,
+        // so re-fit here for the taller expanded window
         // first-ever sizing or unknown height: snap without any y math
         if (oldH <= 0) {
             overlayParams.height = newH
@@ -213,11 +215,14 @@ class OverlayService : Service() {
     /** Window-y bounds that keep the main button fully on screen,
      *  padded away from the status bar and navigation bar. */
     private fun clampWindowY(y: Int): Int {
-        // ✅ always top-anchored now: y is simply the button's top edge, kept
-        // clear of the status bar and the nav bar
+        // ✅ always top-anchored: y is the window's top edge. The clamp must
+        // reserve the WHOLE window height - while expanded the menu hangs
+        // below the button, and reserving only the button let it be dragged
+        // off the bottom of the screen.
         val top = topInset + dpToPx(6)
         val bottom = screenHeight - bottomInset - dpToPx(6)
-        return y.coerceIn(top, (bottom - mainSize).coerceAtLeast(top))
+        val h = if (overlayParams.height > 0) overlayParams.height else mainSize
+        return y.coerceIn(top, (bottom - h).coerceAtLeast(top))
     }
 
     private val isDarkTheme: Boolean
@@ -335,11 +340,11 @@ class OverlayService : Service() {
         overlayParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, mainSize + dpToPx(4),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            // ✅ NO_LIMITS removed: it was what let the EXPANDED menu be dragged
+            // off the screen. The clamp now reserves the full window height, so
+            // the button still reaches the bottom while the menu stays inside.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    // ✅ the tall frame may hang past the screen edge — without this,
-                    // the window manager blocked dragging the button to the bottom
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.END; x = edgePadding; y = dpToPx(80) }
 
@@ -500,8 +505,16 @@ class OverlayService : Service() {
                         mainHandler.postDelayed(showTrashRunnable, 150)
                     }
                     if (dragging) {
-                        overlayParams.x = (startX - dx).toInt()   // ✅ free follow, clamp on release
-                        overlayParams.y = clampWindowY((startY + dy).toInt())
+                        // ✅ the window EASES toward the finger rather than snapping
+                        // to it pixel-for-pixel - takes the jitter out of the drag
+                        // and makes the bubble feel weighted instead of glued.
+                        val wantX = (startX - dx).toInt()
+                        val wantY = clampWindowY((startY + dy).toInt())
+                        val ease = 0.45f
+                        overlayParams.x += ((wantX - overlayParams.x) * ease).toInt()
+                            .let { if (it == 0 && wantX != overlayParams.x) (wantX - overlayParams.x).coerceIn(-1, 1) else it }
+                        overlayParams.y += ((wantY - overlayParams.y) * ease).toInt()
+                            .let { if (it == 0 && wantY != overlayParams.y) (wantY - overlayParams.y).coerceIn(-1, 1) else it }
                         try { windowManager.updateViewLayout(rootView, overlayParams) } catch (_: Exception) {}
                         setDeleteZoneHighlight(isNearTrash(event.rawX, event.rawY))
                     }
@@ -564,7 +577,9 @@ class OverlayService : Service() {
         attachDrag(resultChip) { if (isRecording) stopRecording() else hideResultChip() }
     }
 
-    /** YouTube-PiP style throw: velocity picks the edge, momentum carries y. */
+    /** ✅ Physics-style release: the bubble GLIDES to the edge on a spring-like
+     *  curve whose length and duration scale with how far it has to travel and
+     *  how fast you flung it - never a snap, even when released dead centre. */
     private fun flingRelease(vx: Float, vy: Float, releaseRawX: Float) {
         xAnimator?.cancel()
         val minFling = 600f
@@ -578,20 +593,27 @@ class OverlayService : Service() {
             else -> leftX
         }
 
-        val projected = (vy * 0.18f).toInt()
+        // momentum carries y a little, then settles inside the bounds
+        val projected = (vy * 0.16f).toInt()
         val targetY = clampWindowY(overlayParams.y + projected)
 
         val startX = overlayParams.x
         val startY = overlayParams.y
         if (startX == targetX && startY == targetY) return
 
+        // ✅ duration scales with DISTANCE (a centre release travels far, so it
+        // glides longer) and is eased by the throw speed - so a gentle drop
+        // drifts over, a hard fling whips over, and neither ever jumps.
+        val dist = hypot((targetX - startX).toFloat(), (targetY - startY).toFloat())
         val speed = hypot(vx, vy)
-        // ✅ gentler glide to the edge: longer travel, softer ease-out
-        val dur = (340 + (speed / 6000f) * 260).toLong().coerceIn(340L, 620L)
+        val base = 260f + (dist / screenWidth.toFloat()) * 520f     // far = slower
+        val dur = (base - (speed / 8000f) * 140f)                    // fast = snappier
+            .toLong().coerceIn(280L, 720L)
 
         xAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = dur
-            interpolator = DecelerateInterpolator(2.3f)
+            // ✅ soft, natural settle - decelerates the whole way in, no abrupt stop
+            interpolator = android.view.animation.PathInterpolator(0.16f, 1f, 0.3f, 1f)
             addUpdateListener { a ->
                 val f = a.animatedValue as Float
                 overlayParams.x = (startX + (targetX - startX) * f).toInt()
