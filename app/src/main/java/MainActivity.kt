@@ -903,38 +903,59 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- ✅ auto turn-off delay ----------
     private val autoOffOptions = listOf(
-        15 to "15 minutes", 30 to "30 minutes", 60 to "1 hour",
-        120 to "2 hours", 240 to "4 hours"
+        15 to "15m", 30 to "30m", 60 to "1h", 120 to "2h", 240 to "4h"
     )
 
     private fun refreshAutoOffRow() {
         val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
         val on = prefs.getBoolean("auto_off", true)
-        val mins = prefs.getInt("auto_off_minutes", 60)
         findViewById<LinearLayout>(R.id.autoOffDelayRow)?.visibility =
             if (on) View.VISIBLE else View.GONE
-        findViewById<TextView>(R.id.autoOffDelayValue)?.apply {
-            text = autoOffOptions.firstOrNull { it.first == mins }?.second ?: "1 hour"
-            setTextColor(ThemeHelper.primary(this@MainActivity))
+        findViewById<TextView>(R.id.autoOffDelayLabel)
+            ?.setTextColor(ThemeHelper.textSecondary(this))
+        buildAutoOffChips()
+    }
+
+    /** ✅ the time options as one line of chips; the selected one is filled
+     *  with the theme's accent color. */
+    private fun buildAutoOffChips() {
+        val row = findViewById<LinearLayout>(R.id.autoOffChips) ?: return
+        val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+        val current = prefs.getInt("auto_off_minutes", 60)
+        row.removeAllViews()
+        for ((mins, label) in autoOffOptions) {
+            val selected = mins == current
+            val chip = TextView(this).apply {
+                text = label
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setPadding(0, dp(9), 0, dp(9))
+                setTextColor(if (selected) Color.WHITE else ThemeHelper.textSecondary(this@MainActivity))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(16).toFloat()
+                    if (selected) setColor(ThemeHelper.primary(this@MainActivity))
+                    else {
+                        setColor(Color.TRANSPARENT)
+                        setStroke(dp(1), Color.argb(70, 136, 136, 136))
+                    }
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                ).apply { marginEnd = dp(6) }
+                setOnClickListener {
+                    prefs.edit().putInt("auto_off_minutes", mins).apply()
+                    buildAutoOffChips()
+                }
+            }
+            row.addView(chip)
         }
+        // no trailing margin on the last chip
+        (row.getChildAt(row.childCount - 1)?.layoutParams as? LinearLayout.LayoutParams)
+            ?.marginEnd = 0
     }
 
     private fun setupAutoOffDelay() {
         refreshAutoOffRow()
-        findViewById<LinearLayout>(R.id.autoOffDelayRow)?.setOnClickListener {
-            val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
-            val current = prefs.getInt("auto_off_minutes", 60)
-            val labels = autoOffOptions.map { it.second }.toTypedArray()
-            val checked = autoOffOptions.indexOfFirst { it.first == current }.coerceAtLeast(0)
-            val b = android.app.AlertDialog.Builder(this)
-                .setSingleChoiceItems(labels, checked) { d, which ->
-                    prefs.edit().putInt("auto_off_minutes", autoOffOptions[which].first).apply()
-                    refreshAutoOffRow()
-                    d.dismiss()
-                }
-                .setNegativeButton("Cancel", null)
-            showThemed(b, "Turn off after")
-        }
     }
 
     /** ✅ scrollable popup for Terms / Privacy */

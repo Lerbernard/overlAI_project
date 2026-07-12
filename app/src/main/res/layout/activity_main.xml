@@ -339,27 +339,25 @@
                                 android:id="@+id/autoOffDelayRow"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal"
+                                android:orientation="vertical"
                                 android:paddingStart="24dp"
                                 android:paddingEnd="16dp"
                                 android:paddingBottom="16dp">
 
                                 <TextView
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:text="Turn off after"
-                                    android:textColor="@color/lm_text_secondary"
-                                    android:textSize="14sp" />
-
-                                <TextView
-                                    android:id="@+id/autoOffDelayValue"
+                                    android:id="@+id/autoOffDelayLabel"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="1 hour"
+                                    android:text="Turn off after"
                                     android:textSize="14sp"
-                                    android:textStyle="bold" />
+                                    android:layout_marginBottom="10dp" />
+
+                                <!-- ✅ times sit in one line, chips built in code -->
+                                <LinearLayout
+                                    android:id="@+id/autoOffChips"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal" />
                             </LinearLayout>
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
