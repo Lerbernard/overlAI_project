@@ -32,9 +32,10 @@ object DetectionClient {
 
     /** ✅ one place that turns HTTP codes into words a person understands */
     private fun humanError(code: Int): String = when (code) {
-        400 -> "Request rejected - check your API keys"
-        401, 403 -> "API keys invalid or missing"
-        429 -> "Monthly API quota reached"
+        400 -> "That file couldn't be analysed - try another"
+        401, 403 -> "This version of OverlAI can't reach the detector - please update the app"
+        413 -> "That file is too large to check"
+        429 -> "Too many checks right now - try again in a little while"
         in 500..599 -> "Detection service is down - try later"
         else -> "Detection service error ($code)"
     }
@@ -58,10 +59,12 @@ object DetectionClient {
             .addFormDataPart("media", file.name, file.asRequestBody("image/jpeg".toMediaTypeOrNull()))
             .build()
 
-        // ✅ keys live in the proxy now, not in the app
+        // Keys live in the proxy, not in the app. The token identifies the app build; the proxy
+        // rate-limits per token and per IP, and can retire a token by version.
         val req = Request.Builder()
             .url("${BuildConfig.PROXY_BASE}/image")
             .addHeader("X-App-Token", BuildConfig.APP_TOKEN)
+            .addHeader("X-App-Version", BuildConfig.VERSION_NAME)
             .post(body).build()
         client.newCall(req).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -94,10 +97,12 @@ object DetectionClient {
             .addFormDataPart("media", file.name, file.asRequestBody("video/mp4".toMediaTypeOrNull()))
             .build()
 
-        // ✅ keys live in the proxy now, not in the app
+        // Keys live in the proxy, not in the app. The token identifies the app build; the proxy
+        // rate-limits per token and per IP, and can retire a token by version.
         val req = Request.Builder()
             .url("${BuildConfig.PROXY_BASE}/video")
             .addHeader("X-App-Token", BuildConfig.APP_TOKEN)
+            .addHeader("X-App-Version", BuildConfig.VERSION_NAME)
             .post(body).build()
         client.newCall(req).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {

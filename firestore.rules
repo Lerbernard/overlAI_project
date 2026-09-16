@@ -1,0 +1,68 @@
+rules_version = '2';
+
+// Firestore rules for OverlAI (Firebase project overlai-ddd41).
+// Paste into Firebase console > Firestore Database > Rules, or deploy with the Firebase CLI:
+//   firebase deploy --only firestore:rules
+//
+// Principles:
+//  - users/{uid}: a signed-in user can read and delete their own document, never write it.
+//    The `premium` flag is granted server-side only (after a verified Play purchase), so a
+//    modified APK can't give itself premium.
+//  - bug_reports: anyone signed in or not can *create* a bounded report (the app allows reports
+//    without an account); nobody can read, list, edit or delete them from a client.
+//  - Everything else is closed.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedInAs(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function isString(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    match /users/{uid} {
+      allow get: if signedInAs(uid);
+      allow delete: if signedInAs(uid);
+      allow list, create, update: if false;
+    }
+
+    match /bug_reports/{reportId} {
+      allow create: if
+        request.resource.data.keys().hasOnly([
+          'description', 'appVersion', 'device', 'android', 'uid', 'email',
+          'imageCount', 'status', 'createdAt'
+        ]) &&
+        isString(request.resource.data.description, 4000) &&
+        isString(request.resource.data.appVersion, 40) &&
+        isString(request.resource.data.device, 120) &&
+        isString(request.resource.data.android, 40) &&
+        isString(request.resource.data.uid, 128) &&
+        isString(request.resource.data.email, 254) &&
+        // a report can only carry the identity it was sent with
+        (request.resource.data.uid == '' ||
+          (request.auth != null && request.resource.data.uid == request.auth.uid)) &&
+        request.resource.data.imageCount is int &&
+        request.resource.data.imageCount >= 0 && request.resource.data.imageCount <= 3 &&
+        request.resource.data.status == 'new' &&
+        request.resource.data.createdAt == request.time;
+      allow read, update, delete: if false;
+
+      match /attachments/{attachmentId} {
+        allow create: if
+          request.resource.data.keys().hasOnly(['index', 'mime', 'image']) &&
+          request.resource.data.index is int &&
+          request.resource.data.mime == 'image/jpeg' &&
+          // base64 JPEG, capped well under Firestore's 1 MiB document limit
+          isString(request.resource.data.image, 900000);
+        allow read, update, delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

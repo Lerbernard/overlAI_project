@@ -1081,6 +1081,7 @@ class OverlayService : Service() {
 
             try {
                 val mp = mpManager.getMediaProjection(code, data)
+                    ?: throw IllegalStateException("projection token already used or revoked")
                 mp.registerCallback(object : MediaProjection.Callback() {
                     override fun onStop() {
                         mediaProjection = null

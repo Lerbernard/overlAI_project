@@ -25,14 +25,14 @@ val hasKeystore = keystoreProps.getProperty("storeFile") != null
 
 android {
     namespace = "com.example.test103"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
-        // ✅ REAL app identity. namespace stays com.example.test103 so no
-        // source files need to change — only the installed package ID is renamed.
+        // Installed package ID. The Kotlin namespace stays com.example.test103 so no source
+        // files need to move; only the applicationId is what users and Play see.
         applicationId = "com.lerbernard.overlai"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 36   // Google Play requires API 36 for new apps since 31 Aug 2026
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -40,6 +40,9 @@ android {
         // ✅ Keys are injected at build time — never committed to git
         buildConfigField("String", "PROXY_BASE", "\"$proxyBase\"")
         buildConfigField("String", "APP_TOKEN", "\"$appToken\"")
+        // Ads stay off until real AdMob unit IDs exist and a consent (UMP) flow is in place.
+        // With ADS_ENABLED = false the Mobile Ads SDK is never initialised and the premium card is hidden.
+        buildConfigField("boolean", "ADS_ENABLED", "false")
     }
 
     buildFeatures {

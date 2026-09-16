@@ -94,6 +94,7 @@ class QuickShotService : Service() {
         try {
             val pm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             val mp = pm.getMediaProjection(code, data)
+                ?: throw IllegalStateException("projection token already used or revoked")
             mp.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() { virtualDisplay = null }
             }, mainHandler)

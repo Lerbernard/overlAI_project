@@ -121,25 +121,7 @@ class OverlayWidgetProvider : AppWidgetProvider() {
         for (id in ids) mgr.updateAppWidget(id, buildViews(context))
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == ACTION_TOGGLE) {
-            if (OverlayService.isRunning) {
-                context.stopService(Intent(context, OverlayService::class.java))
-            } else if (Settings.canDrawOverlays(context)) {
-                ContextCompat.startForegroundService(context, Intent(context, OverlayService::class.java))
-            } else {
-                context.startActivity(Intent(context, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            }
-            // State flips asynchronously — refresh shortly after
-            android.os.Handler(context.mainLooper).postDelayed({ updateAll(context) }, 300)
-        }
-    }
-
     companion object {
-        const val ACTION_TOGGLE = "com.example.test103.WIDGET_TOGGLE"
 
         fun buildViews(context: Context): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_overlay)
@@ -161,10 +143,10 @@ class OverlayWidgetProvider : AppWidgetProvider() {
                 if (on) R.drawable.widget_btn_gray else R.drawable.widget_btn_purple)
 
             // ✅ the button toggles the overlay…
-            val toggle = Intent(context, OverlayWidgetProvider::class.java).apply { action = ACTION_TOGGLE }
-            views.setOnClickPendingIntent(R.id.widget_action,
-                PendingIntent.getBroadcast(context, 0, toggle,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            // The button goes through WidgetActionReceiver (not exported), so only this app's own
+            // PendingIntent can flip the overlay; the widget provider itself only handles system events.
+            val toggle = WidgetActionReceiver.toggleIntent(context)
+            views.setOnClickPendingIntent(R.id.widget_action, toggle)
 
             // ✅ …while the rest of the widget opens the app
             val open = Intent(context, MainActivity::class.java).apply {
@@ -198,24 +180,7 @@ class OverlayStatsWidget : AppWidgetProvider() {
         for (id in ids) mgr.updateAppWidget(id, buildViews(context))
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == ACTION_TOGGLE) {
-            if (OverlayService.isRunning) {
-                context.stopService(Intent(context, OverlayService::class.java))
-            } else if (Settings.canDrawOverlays(context)) {
-                ContextCompat.startForegroundService(context, Intent(context, OverlayService::class.java))
-            } else {
-                context.startActivity(Intent(context, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            }
-            android.os.Handler(context.mainLooper).postDelayed({ updateAll(context) }, 300)
-        }
-    }
-
     companion object {
-        const val ACTION_TOGGLE = "com.example.test103.STATS_WIDGET_TOGGLE"
 
         fun buildViews(context: Context): RemoteViews {
             val v = RemoteViews(context.packageName, R.layout.widget_stats)
@@ -261,10 +226,8 @@ class OverlayStatsWidget : AppWidgetProvider() {
             v.setInt(R.id.stats_action, "setBackgroundResource",
                 if (on) R.drawable.widget_btn_gray else R.drawable.widget_btn_purple)
 
-            val toggle = Intent(context, OverlayStatsWidget::class.java).apply { action = ACTION_TOGGLE }
-            v.setOnClickPendingIntent(R.id.stats_action,
-                PendingIntent.getBroadcast(context, 2, toggle,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            val toggle = WidgetActionReceiver.toggleIntent(context)
+            v.setOnClickPendingIntent(R.id.stats_action, toggle)
 
             val open = Intent(context, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

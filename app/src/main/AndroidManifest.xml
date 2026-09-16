@@ -1,33 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.test103">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The package name comes from `namespace` in build.gradle.kts; the old package= attribute
+         here is deprecated and ignored by AGP 8. -->
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
-    <!-- ✅ persistent "overlay is on" foreground service -->
+    <!-- persistent "overlay is on" foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- allowBackup=false: History thumbnails, cached scores and the premium cache stay on the
+         device and are never copied into Google's cloud backup or device-to-device transfer. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@style/Theme.Test103"
-        android:requestLegacyExternalStorage="true">
+        android:theme="@style/Theme.Test103">
 
-        <!-- ✅ AdMob App ID — Google's official TEST id; replace before publishing -->
+        <!-- AdMob App ID. Ads are compiled out (BuildConfig.ADS_ENABLED = false) so the SDK never
+             initialises; this is Google's official sample ID, which the SDK requires to be present.
+             Replace with the real App ID from the AdMob console before turning ads on. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~3347511713" />
+        <!-- The SDK is never initialised in this build; skip its automatic startup too. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
+            android:value="true" />
 
 
         <activity android:name=".MainActivity" android:exported="true" />
 
-        <!-- ✅ switchable launcher icon: exactly one alias is enabled at a time.
+        <!-- switchable launcher icon: exactly one alias is enabled at a time.
              The Settings icon preview toggles between them. -->
         <activity-alias
             android:name=".LauncherDark"
@@ -55,14 +65,13 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- ✅ SHARE TARGET: overlAI appears in the system share sheet for
-             images and videos from any app -->
+        <!-- SHARE TARGET: OverlAI appears in the system share sheet for images and videos -->
         <activity
             android:name=".ShareDetectActivity"
             android:exported="true"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:label="Check with overlAI">
+            android:label="Check with OverlAI">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -91,7 +100,7 @@
             android:exported="false"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
-        <!-- ✅ specialUse = persistent overlay notification;
+        <!-- specialUse = persistent overlay notification;
              mediaProjection type is added only during captures -->
         <service
             android:name=".OverlayService"
@@ -103,33 +112,33 @@
                 android:value="Screen overlay tool for on-demand AI-content detection" />
         </service>
 
-        <!-- ✅ QUICK SETTINGS TILE (like Proton VPN's) -->
+        <!-- QUICK SETTINGS TILE -->
         <service
             android:name=".OverlayTileService"
             android:exported="true"
             android:icon="@drawable/ic_tile"
-            android:label="overlAI"
+            android:label="OverlAI"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
 
-        <!-- ✅ HOME SCREEN WIDGET -->
+        <!-- HOME SCREEN WIDGETS. The providers are exported because the launcher must reach
+             them, but they only handle the system's APPWIDGET_* events. The toggle button goes
+             through WidgetActionReceiver below, which nothing outside this app can send to. -->
         <receiver
             android:name=".OverlayWidgetProvider"
             android:exported="true"
             android:enabled="false"
-            android:label="overlAI">
+            android:label="OverlAI">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.example.test103.WIDGET_TOGGLE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/overlay_widget_info" />
         </receiver>
-        <!-- ✅ Add this receiver to AndroidManifest.xml, next to OverlayWidgetProvider -->
         <receiver
             android:name=".OverlayStatsWidget"
             android:exported="true"
@@ -137,12 +146,15 @@
             android:label="OverlAI Dashboard">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.example.test103.STATS_WIDGET_TOGGLE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_stats_info" />
         </receiver>
+        <receiver
+            android:name=".WidgetActionReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -172,8 +184,6 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
-
-
 
     </application>
 </manifest>

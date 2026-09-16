@@ -106,10 +106,7 @@ object Account {
             .addOnFailureListener { done() }
     }
 
-    /** Write premium state to Firestore (called when a purchase completes). */
-    fun setCloudPremium(active: Boolean) {
-        val uid = uid() ?: return
-        db.collection("users").document(uid)
-            .set(mapOf("premium" to active), com.google.firebase.firestore.SetOptions.merge())
-    }
+    // NOTE: premium is never written from the client. Firestore rules (firestore.rules) make
+    // users/{uid} read-only for the app; a purchase is verified and recorded server-side (Play
+    // Developer API + a Cloud Function or the proxy) once billing exists.
 }

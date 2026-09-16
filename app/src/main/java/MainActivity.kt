@@ -699,6 +699,12 @@ class MainActivity : AppCompatActivity() {
     private fun setupPremiumCard() {
         val t = ThemeHelper
         val premium = Premium.isActive(this)
+        // No ads in this build: the whole "Remove ads" card is hidden (its MaterialCardView is the
+        // grandparent of the title). Nothing else here matters until ADS_ENABLED is true.
+        if (!BuildConfig.ADS_ENABLED) {
+            (findViewById<TextView>(R.id.premiumTitle)?.parent?.parent as? android.view.View)?.visibility = android.view.View.GONE
+            return
+        }
 
         findViewById<TextView>(R.id.premiumTitle)?.setTextColor(t.textPrimary(this))
         findViewById<TextView>(R.id.premiumBody)?.apply {
@@ -770,11 +776,11 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.btnTerms)?.apply {
             setTextColor(ThemeHelper.primary(this@MainActivity))
-            setOnClickListener { showLegalDialog("Terms of Use", TERMS_TEXT) }
+            setOnClickListener { showLegalDialog("Terms of Use", TERMS_TEXT, TERMS_URL) }
         }
         findViewById<TextView>(R.id.btnPrivacy)?.apply {
             setTextColor(ThemeHelper.primary(this@MainActivity))
-            setOnClickListener { showLegalDialog("Privacy Policy", PRIVACY_TEXT) }
+            setOnClickListener { showLegalDialog("Privacy Policy", PRIVACY_TEXT, PRIVACY_URL) }
         }
         findViewById<TextView>(R.id.btnTutorial)?.apply {
             setTextColor(ThemeHelper.primary(this@MainActivity))
@@ -959,7 +965,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** ✅ scrollable popup for Terms / Privacy */
-    private fun showLegalDialog(title: String, body: String) {
+    private fun showLegalDialog(title: String, body: String, url: String) {
         val t = ThemeHelper
         val scroll = android.widget.ScrollView(this).apply {
             addView(LinearLayout(this@MainActivity).apply {
@@ -983,6 +989,7 @@ class MainActivity : AppCompatActivity() {
         val dialog = android.app.AlertDialog.Builder(this)
             .setView(scroll)
             .setPositiveButton("Close", null)
+            .setNeutralButton("Read online") { _, _ -> openUrl(url) }
             .create()
         dialog.show()
         dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
@@ -991,20 +998,41 @@ class MainActivity : AppCompatActivity() {
         })
         dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
             ?.setTextColor(t.primary(this))
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)
+            ?.setTextColor(t.textSecondary(this))
+    }
+
+    /** Opens a website page in the browser (falls back to showing the address). */
+    private fun openUrl(url: String) {
+        try {
+            startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+        } catch (_: Exception) {
+            Toast.makeText(this, url, Toast.LENGTH_LONG).show()
+        }
     }
 
     companion object {
-        private const val PRIVACY_TEXT = """Last updated: July 2026
+        const val SITE_URL = "https://lmbtechnology.com/overlai"
+        const val PRIVACY_URL = "$SITE_URL/privacy"
+        const val TERMS_URL = "$SITE_URL/terms"
+        const val SUPPORT_URL = "$SITE_URL/support"
+        const val SUPPORT_EMAIL = "hello@lmbtechnology.com"
+
+        private const val PRIVACY_TEXT = """Last updated: September 2026
+
+OverlAI is made by LMB Technology. The full policy lives at $PRIVACY_URL.
 
 WHAT WE COLLECT AND WHY
 
-Images and videos you check: when you run a detection, that media is uploaded to Sightengine, a third-party detection service, and analyzed there. Sightengine's own privacy policy governs that processing. We don't keep your media on any server of ours.
+Images and videos you check: when you run a detection, that media is sent over an encrypted connection to our relay server and on to Sightengine, a third-party detection service, and analyzed there. Sightengine's own privacy policy governs that processing. Neither the relay nor we keep a copy of your media. A short fingerprint of each image stays on your phone so re-checking it doesn't use your quota again; it can't be turned back into the image.
 
 Account information: if you choose to sign in with Google, we receive your email address and a Google account identifier and store them through Firebase (Google) so we can recognize you and remember your premium status across devices. Signing in is optional - the app's core detection works without an account.
 
 On-device data: detection results, History thumbnails, monthly usage counts, and your settings are stored only on your phone.
 
-Advertising: unless you have Premium, the app shows ads through Google AdMob. AdMob may collect device identifiers and usage data to serve and measure ads, as described in Google's advertising policies.
+Bug reports: if you send one from Settings, we receive your description, device model, Android version, app version, any screenshots you attach, and your email and user ID if you're signed in. Reports are used only to fix problems.
+
+Advertising: this version of OverlAI shows no ads. If a future version introduces ads through Google AdMob, this policy will be updated first and, where the law requires it, you'll be asked for consent before any personalised ad is shown.
 
 HOW SCREEN CAPTURE WORKS
 
@@ -1016,7 +1044,7 @@ You can delete individual History results at any time, or clear everything by wi
 
 CONTACT
 
-For privacy questions or data requests, contact: OverlAI.support@gmail.com"""
+For privacy questions or data requests, email $SUPPORT_EMAIL. To delete your account without the app, see $SITE_URL/delete-account."""
 
         private const val TERMS_TEXT = """OverlAI is provided as-is, without warranties of any kind.
 
@@ -1026,7 +1054,7 @@ You are responsible for the content you capture and submit, including respecting
 
 Detection depends on an external service and may be unavailable, rate-limited, or changed at any time. The developer is not liable for any damages arising from use of the app or reliance on its results.
 
-These terms may be updated as the app evolves; continued use means acceptance of the current version."""
+These terms may be updated as the app evolves; continued use means acceptance of the current version. Full terms: $TERMS_URL"""
     }
 
     /** ✅ share a history entry's image via the system share sheet */
