@@ -7,7 +7,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.util.TypedValue
@@ -30,7 +29,6 @@ class DetectorFragment : Fragment() {
     private lateinit var emptyHint: TextView
     private lateinit var previewCard: View
     private lateinit var previewImage: ImageView
-    private lateinit var videoBadge: TextView
     private lateinit var scanLine: View
     private var scanAnim: android.animation.ObjectAnimator? = null
     private lateinit var statusText: TextView
@@ -41,8 +39,6 @@ class DetectorFragment : Fragment() {
     private lateinit var valLikelihood: TextView
     private lateinit var valConfidence: TextView
     private lateinit var valType: TextView
-    private var lastIsVideo = false
-    private var lastVideoPath: String? = null   // ✅ playable saved copy
     private var lastPreviewBmp: Bitmap? = null
     private var session = 0
     private lateinit var emptyIconWrap: android.widget.FrameLayout
@@ -72,7 +68,6 @@ class DetectorFragment : Fragment() {
         emptyState.setOnClickListener { openPicker() }   // ✅ the whole card is tappable
         previewCard = v.findViewById(R.id.previewCard)
         previewImage = v.findViewById(R.id.previewImage)
-        videoBadge = v.findViewById(R.id.videoBadge)
         scanLine = v.findViewById(R.id.scanLine)
         statusText = v.findViewById(R.id.statusText)
         verdictCard = v.findViewById(R.id.verdictCard)
@@ -102,11 +97,8 @@ class DetectorFragment : Fragment() {
 
     private fun openPicker() {
         clearResult()
-        val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-        }
-        startActivityForResult(Intent.createChooser(pick, "Select image or video"), PICK_MEDIA)
+        val pick = Intent(Intent.ACTION_GET_CONTENT).apply { type = "image/*" }
+        startActivityForResult(Intent.createChooser(pick, "Select image"), PICK_MEDIA)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -117,7 +109,7 @@ class DetectorFragment : Fragment() {
                 val out = File(requireContext().cacheDir, "detector_crop_out.png")
                 val bmp = if (out.exists()) decodeSampled(out.absolutePath) else null
                 if (bmp != null) {
-                    showPreview(bmp, isVideo = false)
+                    showPreview(bmp)
                     detectImageFile(out)
                 } else showMessage("Crop failed")
             } else showMessage("Crop cancelled")
@@ -126,9 +118,7 @@ class DetectorFragment : Fragment() {
 
         if (requestCode != PICK_MEDIA || resultCode != Activity.RESULT_OK || data?.data == null) return
 
-        val uri = data.data!!
-        val mime = requireContext().contentResolver.getType(uri) ?: ""
-        if (mime.startsWith("video/")) handleVideo(uri) else handleImage(uri)
+        handleImage(data.data!!)
     }
 
     private fun handleImage(uri: Uri) {
@@ -150,54 +140,9 @@ class DetectorFragment : Fragment() {
         } else {
             val bmp = decodeSampled(input.absolutePath)
             if (bmp == null) { showMessage("Couldn't read the image"); return }
-            showPreview(bmp, isVideo = false)
+            showPreview(bmp)
             detectImageFile(input)
         }
-    }
-
-    private fun handleVideo(uri: Uri) {
-        val file = copyUriToCache(uri, "detector_video.mp4") ?: run {
-            showMessage("Couldn't read the file"); return
-        }
-
-        // ✅ duration guard: the sync endpoint only handles short clips
-        val durationMs = try {
-            val r = MediaMetadataRetriever()
-            r.setDataSource(file.absolutePath)
-            val d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            r.release()
-            d
-        } catch (_: Exception) { 0L }
-        if (durationMs > 31_000L) {
-            file.delete()
-            showMessage("Video too long - try a clip under 30 seconds")
-            return
-        }
-
-        var frame: Bitmap? = null
-        try {
-            val r = MediaMetadataRetriever()
-            r.setDataSource(file.absolutePath)
-            frame = r.getFrameAtTime(0)
-            r.release()
-        } catch (_: Exception) {}
-        frame?.let { showPreview(it, isVideo = true) }
-
-        // ✅ keep a playable copy for the preview + History
-        lastVideoPath = HistoryManager.saveVideoCopy(requireContext(), file)
-
-        setLoading()
-        val s = ++session
-        DetectionClient.detectVideo(requireContext(), file,
-            onResult = { pct ->
-                if (s != session || !isAdded) return@detectVideo
-                showResult(pct)
-                try { HistoryManager.add(requireContext(), pct, "Video", frame, lastVideoPath) } catch (_: Exception) {}
-            },
-            onError = { msg ->
-                if (s != session || !isAdded) return@detectVideo
-                showMessage(msg)
-            })
     }
 
     private fun detectImageFile(file: File) {
@@ -219,47 +164,15 @@ class DetectorFragment : Fragment() {
             })
     }
 
-    private fun showPreview(bmp: Bitmap, isVideo: Boolean) {
-        lastIsVideo = isVideo
-        if (!isVideo) lastVideoPath = null
+    private fun showPreview(bmp: Bitmap) {
         emptyState.visibility = View.GONE
         previewCard.visibility = View.VISIBLE
-        // ✅ videos get a centered play badge drawn onto the preview
-        previewImage.setImageBitmap(if (isVideo) withPlayBadge(bmp) else bmp)
+        previewImage.setImageBitmap(bmp)
         lastPreviewBmp = bmp
-        videoBadge.visibility = if (isVideo) View.VISIBLE else View.GONE
     }
 
-    /** ✅ composite a centered play button onto a video preview frame */
-    private fun withPlayBadge(src: Bitmap): Bitmap {
-        return try {
-            val out = src.copy(Bitmap.Config.ARGB_8888, true)
-            val c = android.graphics.Canvas(out)
-            val cx = out.width / 2f
-            val cy = out.height / 2f
-            val r = minOf(out.width, out.height) * 0.13f
-            val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            p.color = Color.argb(170, 20, 20, 24)
-            c.drawCircle(cx, cy, r, p)
-            p.color = Color.WHITE
-            val tri = android.graphics.Path().apply {
-                moveTo(cx - r * 0.28f, cy - r * 0.45f)
-                lineTo(cx - r * 0.28f, cy + r * 0.45f)
-                lineTo(cx + r * 0.52f, cy)
-                close()
-            }
-            c.drawPath(tri, p)
-            out
-        } catch (_: Exception) { src }
-    }
-
-    /** ✅ tap the preview: videos play (no autoplay), images go fullscreen */
+    /** tap the preview: opens it fullscreen */
     private fun showFullPreview() {
-        val vp = lastVideoPath
-        if (lastIsVideo && vp != null && java.io.File(vp).exists()) {
-            VideoPlayerDialog.show(requireContext(), vp)
-            return
-        }
         val bmp = lastPreviewBmp ?: return
         val d = android.app.Dialog(requireContext(),
             android.R.style.Theme_Black_NoTitleBar_Fullscreen)
@@ -375,7 +288,7 @@ class DetectorFragment : Fragment() {
             else -> "Low"
         }
         valConfidence.setTextColor(t.textPrimary(ctx))
-        valType.text = if (lastIsVideo) "Video" else "Image"
+        valType.text = "Image"
         valType.setTextColor(t.textPrimary(ctx))
 
         btnChoose.text = "Try another"
@@ -480,12 +393,6 @@ class DetectorFragment : Fragment() {
         previewImage.background = GradientDrawable().apply {
             cornerRadius = dp(18).toFloat()
             setColor(t.card(ctx))
-        }
-
-        videoBadge.setTextColor(Color.WHITE)
-        videoBadge.background = GradientDrawable().apply {
-            cornerRadius = dp(10).toFloat()
-            setColor(ThemeHelper.scrim(requireContext()))
         }
 
         btnChoose.backgroundTintList = android.content.res.ColorStateList.valueOf(t.primary(ctx))

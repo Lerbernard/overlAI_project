@@ -9,8 +9,6 @@ import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
-import android.media.MediaMetadataRetriever
-import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.*
@@ -53,7 +51,6 @@ class OverlayService : Service() {
     private lateinit var stackView: LinearLayout        // the visible column
     private lateinit var mainButton: OutlineIconView
     private lateinit var photoBtn: OutlineIconView
-    private lateinit var videoBtn: OutlineIconView
     private lateinit var resultChip: LinearLayout       // [mini icon | percentage]
     private lateinit var resultLabel: TextView
     private lateinit var overlayParams: WindowManager.LayoutParams
@@ -65,12 +62,9 @@ class OverlayService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
-    private var mediaRecorder: MediaRecorder? = null
 
     private var isExpanded = false
     private var isProcessing = false
-    private var isRecording = false
-    private var recordStartMs = 0L
     // ✅ the stack ALWAYS grows downward now; if the menu would run off the
     // bottom, the whole bubble slides up so it fits with padding instead.
     private val stackAtBottom = false
@@ -84,7 +78,6 @@ class OverlayService : Service() {
 
     companion object {
         const val ACTION_STOP_SERVICE = "ACTION_STOP_SERVICE"
-        private const val MAX_RECORD_MS = 30_000L
         /** ✅ live state for the QS tile + widget */
         @Volatile var isRunning = false
             private set
@@ -100,8 +93,8 @@ class OverlayService : Service() {
     private val mainSize: Int get() = dpToPx(64)
     private val subSize: Int get() = dpToPx(48)
     private val gap: Int get() = dpToPx(8)              // ✅ ONE spacing everywhere
-    // frame tall enough for: main + photo + video + result pill + panel pad
-    private val frameHeight: Int get() = mainSize + 3 * (subSize + gap) + gap + dpToPx(4)
+    // frame tall enough for: main + photo + result pill + panel pad
+    private val frameHeight: Int get() = mainSize + 2 * (subSize + gap) + gap + dpToPx(4)
 
     private val screenHeight: Int
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -268,7 +261,7 @@ class OverlayService : Service() {
     /** Foreground with the right type: specialUse while idle, +mediaProjection
      *  only while actually capturing (Android 14 forbids it earlier). */
     private fun goForeground(capturing: Boolean) {
-        val notif = createNotification(recording = isRecording)
+        val notif = createNotification()
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
                 val type = if (capturing)
@@ -298,10 +291,9 @@ class OverlayService : Service() {
         }
 
         photoBtn = subButton(OutlineIconView.Mode.PHOTO)
-        videoBtn = subButton(OutlineIconView.Mode.VIDEO)
 
         // ✅ Result pill: percentage text, colored by the result. It expands
-        // beneath the ACTUAL camera/video button that was tapped.
+        // beneath the camera button.
         resultLabel = TextView(this).apply {
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
@@ -360,13 +352,12 @@ class OverlayService : Service() {
     }
 
     /** Stack the children so growth happens away from the main button.
-     *  ✅ every gap is identical (camera↔video same as video↔result). */
+     *  every gap is identical. */
     private fun applyChildOrder() {
         stackView.removeAllViews()
-        val subs = listOf(photoBtn, videoBtn, resultChip)
+        val subs = listOf(photoBtn, resultChip)
         if (stackAtBottom) {
             stackView.addView(resultChip)
-            stackView.addView(videoBtn)
             stackView.addView(photoBtn)
             stackView.addView(mainButton)
             subs.forEach {
@@ -375,7 +366,6 @@ class OverlayService : Service() {
         } else {
             stackView.addView(mainButton)
             stackView.addView(photoBtn)
-            stackView.addView(videoBtn)
             stackView.addView(resultChip)
             subs.forEach {
                 (it.layoutParams as LinearLayout.LayoutParams).apply { topMargin = gap; bottomMargin = 0 }
@@ -395,11 +385,11 @@ class OverlayService : Service() {
         refreshPanelAndTheme()
 
         val slide = dpToPx(14).toFloat() * (if (stackAtBottom) 1f else -1f)
-        for (b in listOf(photoBtn, videoBtn)) {
+        for (b in listOf(photoBtn)) {
             b.visibility = View.VISIBLE
         }
         syncWindowSize()   // ✅ grow the window (atomic with the y shift)
-        for (b in listOf(photoBtn, videoBtn)) {
+        for (b in listOf(photoBtn)) {
             b.alpha = 0f
             b.translationY = slide
             b.animate().alpha(1f).translationY(0f)
@@ -426,7 +416,7 @@ class OverlayService : Service() {
         // ✅ smooth collapse: items glide back toward the button and fade,
         // the pill fades with them, THEN the window shrinks (animated)
         val slide = dpToPx(10).toFloat() * (if (stackAtBottom) 1f else -1f)
-        for (v in listOf(photoBtn, videoBtn, resultChip)) {
+        for (v in listOf(photoBtn, resultChip)) {
             if (v.visibility == View.VISIBLE) {
                 v.animate().alpha(0f).translationY(slide)
                     .setDuration(130).setInterpolator(DecelerateInterpolator()).start()
@@ -440,7 +430,7 @@ class OverlayService : Service() {
             }
         }
         mainHandler.postDelayed({
-            for (v in listOf(photoBtn, videoBtn, resultChip)) {
+            for (v in listOf(photoBtn, resultChip)) {
                 v.visibility = View.GONE
                 v.alpha = 1f
                 v.translationY = 0f
@@ -458,9 +448,7 @@ class OverlayService : Service() {
         val dark = isDarkTheme
         mainButton.applyTheme(dark)
         photoBtn.applyTheme(dark)
-        videoBtn.applyTheme(dark)
         photoBtn.setGlyphTint(TEAL)
-        videoBtn.setGlyphTint(TEAL)
         refreshPanel()
     }
 
@@ -573,8 +561,7 @@ class OverlayService : Service() {
     private fun makeDraggable() {
         attachDrag(mainButton) { handleMainTap() }
         attachDrag(photoBtn) { requestProjection(mode = "photo") }
-        attachDrag(videoBtn) { requestProjection(mode = "video") }
-        attachDrag(resultChip) { if (isRecording) stopRecording() else hideResultChip() }
+        attachDrag(resultChip) { hideResultChip() }
     }
 
     /** ✅ Physics-style release: the bubble GLIDES to the edge on a spring-like
@@ -708,11 +695,9 @@ class OverlayService : Service() {
             if (resultChip.visibility == View.VISIBLE) return@post
             // ✅ the result expands beneath the actual button that was tapped
             if (!isExpanded) {
-                val srcBtn = if (lastMode == "video") videoBtn else photoBtn
-                photoBtn.visibility = if (srcBtn === photoBtn) View.VISIBLE else View.GONE
-                videoBtn.visibility = if (srcBtn === videoBtn) View.VISIBLE else View.GONE
-                srcBtn.alpha = 1f
-                srcBtn.translationY = 0f
+                photoBtn.visibility = View.VISIBLE
+                photoBtn.alpha = 1f
+                photoBtn.translationY = 0f
             }
             resultChip.visibility = View.VISIBLE
             refreshPanel()
@@ -730,7 +715,6 @@ class OverlayService : Service() {
             resultChip.visibility = View.GONE
             if (!isExpanded) {
                 photoBtn.visibility = View.GONE
-                videoBtn.visibility = View.GONE
             }
             refreshPanel()
             syncWindowSize()
@@ -752,7 +736,7 @@ class OverlayService : Service() {
     }
 
     // ---------------------------------------------------------------------
-    // Projection request (shared by photo + video)
+    // Projection request
     // ---------------------------------------------------------------------
 
     // ✅ optional auto-off: stop after an hour without a check
@@ -763,7 +747,7 @@ class OverlayService : Service() {
             // ✅ auto-off is ON by default; the delay is user-selectable
             val enabled = prefs.getBoolean("auto_off", true)
             val minutes = prefs.getInt("auto_off_minutes", 60)
-            if (enabled && !isRecording && !isProcessing &&
+            if (enabled && !isProcessing &&
                 System.currentTimeMillis() - lastUseMs > minutes * 60_000L) {
                 stopSelf()
                 return
@@ -773,7 +757,7 @@ class OverlayService : Service() {
     }
 
     private fun requestProjection(mode: String) {
-        if (isProcessing || isRecording) return
+        if (isProcessing) return
         lastUseMs = System.currentTimeMillis()
         lastMode = mode
         hideResultChip()
@@ -868,118 +852,6 @@ class OverlayService : Service() {
     }
 
     // ---------------------------------------------------------------------
-    // Screen video recording
-    // ---------------------------------------------------------------------
-
-    private val recordFile: File get() = File(cacheDir, "record.mp4")
-
-    private val timerRunnable = object : Runnable {
-        override fun run() {
-            if (!isRecording) return
-            val elapsed = System.currentTimeMillis() - recordStartMs
-            if (elapsed >= MAX_RECORD_MS) { stopRecording(); return }
-            val s = (elapsed / 1000).toInt()
-            resultLabel.text = String.format("%d:%02d", s / 60, s % 60)
-            mainHandler.postDelayed(this, 500)
-        }
-    }
-
-    private fun startRecording(mp: MediaProjection) {
-        val m = resources.displayMetrics
-        val scale = max(m.widthPixels, m.heightPixels) / 1280f
-        val vw = if (scale > 1f) (m.widthPixels / scale).toInt() and 0xFFFE else m.widthPixels and 0xFFFE
-        val vh = if (scale > 1f) (m.heightPixels / scale).toInt() and 0xFFFE else m.heightPixels and 0xFFFE
-
-        try {
-            recordFile.delete()
-            @Suppress("DEPRECATION")
-            val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(this) else MediaRecorder()
-            rec.setVideoSource(MediaRecorder.VideoSource.SURFACE)
-            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            rec.setOutputFile(recordFile.absolutePath)
-            rec.setVideoSize(vw, vh)
-            rec.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-            rec.setVideoEncodingBitRate(4_000_000)
-            rec.setVideoFrameRate(30)
-            rec.prepare()
-
-            virtualDisplay = mp.createVirtualDisplay(
-                "Recording", vw, vh, m.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY,
-                rec.surface, null, null
-            )
-
-            rec.start()
-            mediaRecorder = rec
-            isRecording = true
-            recordStartMs = System.currentTimeMillis()
-
-            resultLabel.text = "0:00"
-            (resultChip.background as GradientDrawable).setColor(BRIGHT_RED)
-            showResultChip()
-            mainHandler.postDelayed(timerRunnable, 500)
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-            releaseRecorder()
-            stopMediaProjection()
-            stopForegroundCompat()
-            showResultChip()
-            failStatus("REC ERR")
-        }
-    }
-
-    private fun stopRecording() {
-        if (!isRecording) return
-        isRecording = false
-        mainHandler.removeCallbacks(timerRunnable)
-
-        var ok = true
-        try { mediaRecorder?.stop() } catch (e: Exception) { ok = false }
-        releaseRecorder()
-        stopMediaProjection()
-        stopForegroundCompat()
-
-        if (ok && recordFile.exists() && recordFile.length() > 0) {
-            // ✅ stopping auto-sends the video; "..." = checking in progress
-            updateStatus("...")
-            runVideoDetection(recordFile)
-        } else {
-            failStatus("REC ERR")
-        }
-    }
-
-    private fun releaseRecorder() {
-        try { mediaRecorder?.reset() } catch (_: Exception) {}
-        try { mediaRecorder?.release() } catch (_: Exception) {}
-        mediaRecorder = null
-    }
-
-    private fun runVideoDetection(file: File) {
-        DetectionClient.detectVideo(this, file,
-            onResult = { pct ->
-                updateStatus("$pct%")
-                // ✅ keep a persistent copy so the video is watchable in History
-                val saved = HistoryManager.saveVideoCopy(this, file)
-                try {
-                    val retriever = MediaMetadataRetriever()
-                    retriever.setDataSource(file.absolutePath)
-                    val frame = retriever.getFrameAtTime(0)
-                    retriever.release()
-                    HistoryManager.add(this, pct, "Video", frame, saved)
-                    frame?.recycle()
-                } catch (_: Exception) {
-                    HistoryManager.add(this, pct, "Video", null, saved)
-                }
-                file.delete()
-            },
-            onError = { msg ->
-                failStatus(msg)
-                file.delete()
-            })
-    }
-
-    // ---------------------------------------------------------------------
     // Image detection + status
     // ---------------------------------------------------------------------
 
@@ -998,7 +870,6 @@ class OverlayService : Service() {
             "NO IMG", "ERR", "PERM ERR" -> "Screen capture failed"
             "CROP ERR" -> "Crop failed"
             "EMPTY" -> "Nothing was selected"
-            "REC ERR" -> "Recording failed"
             "FILE ERR" -> "Couldn't save the capture"
             else -> code   // already human-readable (from DetectionClient)
         }
@@ -1038,7 +909,6 @@ class OverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP_SERVICE) {
-            if (isRecording) stopRecording()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -1071,7 +941,6 @@ class OverlayService : Service() {
             @Suppress("DEPRECATION")
             intent?.getParcelableExtra("DATA")
         }
-        val mode = intent?.getStringExtra("MODE") ?: "photo"
 
         if (code == Activity.RESULT_OK && data != null) {
             goForeground(capturing = true)
@@ -1090,7 +959,7 @@ class OverlayService : Service() {
                 }, mainHandler)
 
                 mediaProjection = mp
-                if (mode == "video") startRecording(mp) else performCapture(mp)
+                performCapture(mp)
             } catch (e: Exception) {
                 resetAfterCapture("PERM ERR")
             }
@@ -1130,7 +999,7 @@ class OverlayService : Service() {
         }
     }
 
-    private fun createNotification(recording: Boolean = false): Notification {
+    private fun createNotification(): Notification {
         val stopIntent = Intent(this, OverlayService::class.java).apply { action = ACTION_STOP_SERVICE }
         val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE)
 
@@ -1139,8 +1008,8 @@ class OverlayService : Service() {
             PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(this, "overlay_ch")
-            .setContentTitle(if (recording) "OverlAI — recording screen…" else "OverlAI overlay is on")
-            .setContentText(if (recording) "Tap the timer chip to stop" else "Tap to open the app")
+            .setContentTitle("OverlAI overlay is on")
+            .setContentText("Tap to open the app")
             .setContentIntent(openIntent)
             .setSmallIcon(R.drawable.ic_stat_logo)   // ✅ brand mark in the status bar
             .setOngoing(true)
@@ -1161,12 +1030,6 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         sizeAnimator?.cancel()
-        if (isRecording) {
-            isRecording = false
-            mainHandler.removeCallbacks(timerRunnable)
-            try { mediaRecorder?.stop() } catch (_: Exception) {}
-            releaseRecorder()
-        }
         mainHandler.removeCallbacks(autoOffCheck)
         stopMediaProjection()
         hideDeleteZone()

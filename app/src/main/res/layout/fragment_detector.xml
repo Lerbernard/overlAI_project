@@ -43,21 +43,6 @@
                     android:layout_height="3dp"
                     android:visibility="gone" />
 
-                <TextView
-                    android:id="@+id/videoBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom|end"
-                    android:layout_margin="10dp"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:paddingTop="3dp"
-                    android:paddingBottom="3dp"
-                    android:text="VIDEO"
-                    android:textSize="11sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/white"
-                    android:visibility="gone" />
             </FrameLayout>
 
             <TextView
@@ -217,7 +202,7 @@
             android:paddingStart="32dp"
             android:paddingEnd="32dp"
             android:gravity="center"
-            android:text="Pick any image or video and OverlAI will tell you how likely it is to be AI-generated"
+            android:text="Pick any image and OverlAI will tell you how likely it is to be AI-generated"
             android:textSize="14sp" />
 
         <LinearLayout
@@ -237,7 +222,7 @@
                 android:layout_marginEnd="8dp"
                 android:paddingStart="14dp" android:paddingEnd="14dp"
                 android:paddingTop="6dp" android:paddingBottom="6dp"
-                android:text="Videos" android:textSize="12sp"/>
+                android:text="Screenshots" android:textSize="12sp"/>
             <TextView android:id="@+id/chip3"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:paddingStart="14dp" android:paddingEnd="14dp"

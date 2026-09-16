@@ -10,11 +10,10 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
 
 /**
- * The single detection pipeline, used by the overlay, share sheet (and can
- * replace DetectorFragment's networking too).
+ * The single detection pipeline (images only), used by the overlay, the share sheet,
+ * the quick-check tile and the Detector tab.
  *  ✅ human-readable error messages
  *  ✅ image results cached by file hash (no repeat API calls)
  *  ✅ every real API call counted for the monthly usage display
@@ -77,7 +76,7 @@ object DetectionClient {
                         val json = JSONObject(it.body?.string() ?: "{}")
                         val score = json.optJSONObject("type")?.optDouble("ai_generated") ?: 0.0
                         val pct = (score * 100).toInt()
-                        UsageTracker.increment(app, video = false)   // ✅ count it
+                        UsageTracker.increment(app)   // count it
                         if (hash != null) UsageTracker.storeScore(app, hash, pct)
                         main.post { onResult(pct) }
                     } catch (e: Exception) {
@@ -88,55 +87,4 @@ object DetectionClient {
         })
     }
 
-    fun detectVideo(context: Context, file: File,
-                    onResult: (Int) -> Unit, onError: (String) -> Unit) {
-        val app = context.applicationContext
-
-        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("models", "genai")
-            .addFormDataPart("media", file.name, file.asRequestBody("video/mp4".toMediaTypeOrNull()))
-            .build()
-
-        // Keys live in the proxy, not in the app. The token identifies the app build; the proxy
-        // rate-limits per token and per IP, and can retire a token by version.
-        val req = Request.Builder()
-            .url("${BuildConfig.PROXY_BASE}/video")
-            .addHeader("X-App-Token", BuildConfig.APP_TOKEN)
-            .addHeader("X-App-Version", BuildConfig.VERSION_NAME)
-            .post(body).build()
-        client.newCall(req).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                main.post { onError("Check your internet connection") }
-            }
-            override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    val bodyStr = it.body?.string() ?: "{}"
-                    if (!it.isSuccessful) { main.post { onError(humanError(it.code)) }; return }
-                    try {
-                        val json = JSONObject(bodyStr)
-                        var score = json.optJSONObject("summary")
-                            ?.optJSONObject("genai")?.optDouble("ai_generated")
-                            ?.takeIf { d -> !d.isNaN() }
-                        if (score == null) {
-                            val frames = json.optJSONObject("data")?.optJSONArray("frames")
-                            if (frames != null && frames.length() > 0) {
-                                var m = 0.0
-                                for (i in 0 until frames.length()) {
-                                    val v = frames.optJSONObject(i)?.optJSONObject("type")
-                                        ?.optDouble("ai_generated") ?: Double.NaN
-                                    if (!v.isNaN()) m = max(m, v)
-                                }
-                                score = m
-                            }
-                        }
-                        if (score == null) { main.post { onError("Couldn't read the result") }; return }
-                        UsageTracker.increment(app, video = true)   // ✅ count it
-                        main.post { onResult((score * 100).toInt()) }
-                    } catch (e: Exception) {
-                        main.post { onError("Couldn't read the result") }
-                    }
-                }
-            }
-        })
-    }
 }

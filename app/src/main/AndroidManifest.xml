@@ -65,7 +65,7 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- SHARE TARGET: OverlAI appears in the system share sheet for images and videos -->
+        <!-- SHARE TARGET: OverlAI appears in the system share sheet for images -->
         <activity
             android:name=".ShareDetectActivity"
             android:exported="true"
@@ -76,11 +76,6 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
 

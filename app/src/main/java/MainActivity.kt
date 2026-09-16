@@ -242,26 +242,7 @@ class MainActivity : AppCompatActivity() {
                 val bmp: Bitmap? = e.thumbPath?.let { decodeSampled(it, dp(56)) }   // ✅ sampled
                 if (bmp != null) setImageBitmap(bmp)
             }
-            // ✅ video entries get a centered play badge on the thumbnail
-            if (e.videoPath != null && java.io.File(e.videoPath).exists()) {
-                row.addView(FrameLayout(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(14) }
-                    thumb.layoutParams = FrameLayout.LayoutParams(dp(48), dp(48))
-                    addView(thumb)
-                    addView(TextView(this@MainActivity).apply {
-                        text = "\u25B6"
-                        textSize = 11f
-                        setTextColor(Color.WHITE)
-                        gravity = Gravity.CENTER
-                        setPadding(dp(2), 0, 0, 0)
-                        background = GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(Color.argb(150, 20, 20, 24))
-                        }
-                        layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
-                    })
-                })
-            } else row.addView(thumb)
+            row.addView(thumb)
 
             // Middle: source + date
             val mid = LinearLayout(this).apply {
@@ -349,14 +330,9 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(300)
                 ).apply { bottomMargin = dp(16) }
-                // ✅ tap: videos play (centered play button, no autoplay);
-                // images open fullscreen as before
+                // tap: open the image fullscreen
                 isClickable = true
-                setOnClickListener {
-                    val vp = e.videoPath
-                    if (vp != null && java.io.File(vp).exists()) VideoPlayerDialog.show(this@MainActivity, vp)
-                    else showFullImage(e.thumbPath!!)
-                }
+                setOnClickListener { showFullImage(e.thumbPath!!) }
             })
         }
 
@@ -832,7 +808,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** ✅ popup: describe the bug, attach images/videos, send by email. */
+    /** popup: describe the bug, attach screenshots, send. */
     private fun showBugReportDialog() {
         val t = ThemeHelper
         bugAttachments.clear()
@@ -1012,7 +988,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        const val SITE_URL = "https://lmbtechnology.com/overlai"
+        const val SITE_URL = "https://lmbtechnology.com/ai-image-detector/app"
         const val PRIVACY_URL = "$SITE_URL/privacy"
         const val TERMS_URL = "$SITE_URL/terms"
         const val SUPPORT_URL = "$SITE_URL/support"
@@ -1024,7 +1000,7 @@ OverlAI is made by LMB Technology. The full policy lives at $PRIVACY_URL.
 
 WHAT WE COLLECT AND WHY
 
-Images and videos you check: when you run a detection, that media is sent over an encrypted connection to our relay server and on to Sightengine, a third-party detection service, and analyzed there. Sightengine's own privacy policy governs that processing. Neither the relay nor we keep a copy of your media. A short fingerprint of each image stays on your phone so re-checking it doesn't use your quota again; it can't be turned back into the image.
+Images you check: when you run a detection, the image is sent over an encrypted connection to our relay server and on to Sightengine, a third-party detection service, and analyzed there. Sightengine's own privacy policy governs that processing. Neither the relay nor we keep a copy of your images. A short fingerprint of each image stays on your phone so re-checking it doesn't use your quota again; it can't be turned back into the image.
 
 Account information: if you choose to sign in with Google, we receive your email address and a Google account identifier and store them through Firebase (Google) so we can recognize you and remember your premium status across devices. Signing in is optional - the app's core detection works without an account.
 
@@ -1231,8 +1207,7 @@ These terms may be updated as the app evolves; continued use means acceptance of
 
     /** ✅ monthly API usage shown in Settings */
     private fun refreshUsage() {
-        val (img, vid) = UsageTracker.counts(this)
-        findViewById<TextView>(R.id.usage_text)?.text = "Images: $img · Videos: $vid"
+        findViewById<TextView>(R.id.usage_text)?.text = "Images checked: ${UsageTracker.counts(this)}"
     }
 
     private fun startOverlayService() {

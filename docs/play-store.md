@@ -9,10 +9,10 @@ data safety section *and* the privacy policy on the website first.
 
 | Field | Value |
 |---|---|
-| Privacy policy | https://lmbtechnology.com/overlai/privacy |
-| Support / website | https://lmbtechnology.com/overlai/support |
-| Account deletion | https://lmbtechnology.com/overlai/delete-account |
-| Terms of use (in-app link) | https://lmbtechnology.com/overlai/terms |
+| Privacy policy | https://lmbtechnology.com/ai-image-detector/app/privacy |
+| Support / website | https://lmbtechnology.com/ai-image-detector/app/support |
+| Account deletion | https://lmbtechnology.com/ai-image-detector/app/delete-account |
+| Terms of use (in-app link) | https://lmbtechnology.com/ai-image-detector/app/terms |
 | Support email | hello@lmbtechnology.com |
 | Developer name shown on Play | LMB Technology (matches the Florida fictitious-name filing) |
 
@@ -30,18 +30,17 @@ Is this picture real or AI-generated? OverlAI answers that question anywhere on 
 
 FLOATING BUBBLE
 A small draggable bubble that works over any app. Double-tap it to check what's on screen,
-crop to the part you're unsure about, or record a short clip. The score appears right in the
-bubble.
+or crop to the part you're unsure about. The score appears right in the bubble.
 
 SHARE SHEET
-Long-press a picture or video in any app, share it to OverlAI, and get the score without
+Long-press a picture in any app, share it to OverlAI, and get the score without
 leaving what you were doing.
 
 QUICK-SETTINGS TILE
 One tap from the notification shade: screenshot, check, save the result, done.
 
 GALLERY DETECTOR
-Pick any image or video from your phone and get a verdict with likelihood and confidence.
+Pick any image from your phone, crop it if you like, and get a verdict with likelihood and confidence.
 
 HISTORY AND WIDGETS
 Every result with its thumbnail, grouped by day. A home-screen widget shows this month's
@@ -52,13 +51,14 @@ PRIVATE BY DESIGN
 • What you check is analysed and not stored by us.
 • Results, thumbnails and settings live only on your phone.
 • No ads, no analytics, no tracking.
-• Android asks before every screenshot; nothing is captured in the background.
+• Android asks before every screenshot; nothing is captured in the background and no video is ever recorded.
+• Images only: no video files, no recording.
 
 HONEST ABOUT LIMITS
 Scores are estimates from an AI model, not proof. They can be wrong in both directions, so
 treat them as one signal alongside your own judgement.
 
-Made by LMB Technology. Support: https://lmbtechnology.com/overlai/support
+Made by LMB Technology. Support: https://lmbtechnology.com/ai-image-detector/app/support
 ```
 
 **Category:** Tools. **Tags:** AI, image detection, deepfake, screenshot.
@@ -68,13 +68,13 @@ Made by LMB Technology. Support: https://lmbtechnology.com/overlai/support
 result, History, the quick-settings tile), optionally a 7-inch tablet set. Take them on a
 Pixel emulator with a clean status bar.
 
-**Contact details:** email hello@lmbtechnology.com, website https://lmbtechnology.com/overlai.
+**Contact details:** email hello@lmbtechnology.com, website https://lmbtechnology.com/ai-image-detector/app.
 
 ## App content section
 
 | Question | Answer |
 |---|---|
-| Privacy policy | https://lmbtechnology.com/overlai/privacy |
+| Privacy policy | https://lmbtechnology.com/ai-image-detector/app/privacy |
 | Ads | **No**, the app does not contain ads (BuildConfig.ADS_ENABLED is false; the SDK is never initialised). |
 | App access | All functionality is available without special access. Provide a note: "No login required. Sign-in is optional." |
 | Content rating (IARC) | Utility/productivity. No violence, sexual content, language, controlled substances, gambling, or user-to-user interaction. Does not share location. Users can't share content with each other through the app. Expected rating: Everyone / PEGI 3. |
@@ -93,8 +93,8 @@ Play asks for a declaration (with a short screen-recorded video) for these:
 - **`FOREGROUND_SERVICE_MEDIA_PROJECTION`** — task: "Screen capture initiated by the user."
   Text: *"OverlAI captures the screen only when the user taps the floating bubble, the
   quick-settings tile or the share sheet. Android's system consent dialog is shown before every
-  capture. The captured frame is sent for AI-generation analysis and the result is shown to the
-  user. Nothing is captured in the background."*
+  capture. A single screenshot frame is sent for AI-generation analysis and the result is shown
+  to the user. No video is recorded and nothing is captured in the background."*
 - **`FOREGROUND_SERVICE_SPECIAL_USE`** — subtype text is in the manifest: *"Screen overlay
   tool for on-demand AI-content detection."* Explain: *"The service keeps the floating overlay
   bubble alive while the user has turned it on. It shows a persistent notification and does no
@@ -115,14 +115,14 @@ quick-settings tile. Upload it as an unlisted YouTube video and paste the link i
 |---|---|
 | Does your app collect or share any of the required user data types? | Yes |
 | Is all of the user data collected by your app encrypted in transit? | Yes (HTTPS everywhere) |
-| Do you provide a way for users to request that their data is deleted? | Yes (in-app Delete account, plus https://lmbtechnology.com/overlai/delete-account) |
+| Do you provide a way for users to request that their data is deleted? | Yes (in-app Delete account, plus https://lmbtechnology.com/ai-image-detector/app/delete-account) |
 | Independent security review | No |
 
 **Data types**
 
 | Data type | Collected? | Shared? | Optional? | Purpose | Ephemeral? | Notes |
 |---|---|---|---|---|---|---|
-| Photos and videos | Yes | No | Required for the feature | App functionality | **Yes** — processed for the request and not stored | Sent to our relay and on to Sightengine (a service provider acting on our instructions, so not "shared" in Play's sense). |
+| Photos and videos (images only; the app never records or uploads video) | Yes | No | Required for the feature | App functionality | **Yes** — processed for the request and not stored | Sent to our relay and on to Sightengine (a service provider acting on our instructions, so not "shared" in Play's sense). |
 | Personal info: Email address | Yes | No | Optional (only with Google sign-in) | Account management | No | Stored in Firebase Auth / Firestore until the account is deleted. |
 | Personal info: Name | Yes | No | Optional | Account management | No | Google display name from sign-in. |
 | Personal info: User IDs | Yes | No | Optional | Account management, App functionality | No | Firebase UID. |
@@ -170,4 +170,4 @@ Advertising, mark "Ads: Yes", add the UMP consent flow, and update the website p
    New personal developer accounts must run a closed test with 12 testers for 14 days before
    production access is granted.
 8. **After publishing.** Put the Play URL into `PLAY_URL` in the website's
-   `app/overlai/page.js` so the "Coming to Google Play" button becomes "Get it on Google Play".
+   `app/ai-image-detector/app/page.js` so the "Coming to Google Play" buttons become "Get it on Google Play".

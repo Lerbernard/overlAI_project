@@ -7,7 +7,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -29,8 +28,6 @@ class ShareDetectActivity : Activity() {
     private lateinit var verdictText: TextView
     private lateinit var progress: ProgressBar
     private lateinit var preview: ImageView
-
-    private val MAX_VIDEO_BYTES = 40L * 1024 * 1024   // sync endpoint wants small clips
 
     private fun dp(v: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
@@ -55,7 +52,6 @@ class ShareDetectActivity : Activity() {
 
         when {
             type.startsWith("image/") -> handleImage(uri)
-            type.startsWith("video/") -> handleVideo(uri)
             else -> {
                 statusText.text = "Unsupported file type"
                 progress.visibility = android.view.View.GONE
@@ -76,45 +72,6 @@ class ShareDetectActivity : Activity() {
             onResult = { pct ->
                 showScore(pct)
                 try { HistoryManager.add(this, pct, "Shared", bmp) } catch (_: Exception) {}
-            },
-            onError = { fail(it) })
-    }
-
-    private fun handleVideo(uri: Uri) {
-        val file = copyToCache(uri, "shared_video.mp4") ?: run { fail("Couldn't read the file"); return }
-        if (file.length() > MAX_VIDEO_BYTES) {
-            fail("Video too large — try a clip under ~30s")
-            return
-        }
-        // ✅ duration guard, clearer than a server error
-        val durationMs = try {
-            val r = MediaMetadataRetriever()
-            r.setDataSource(file.absolutePath)
-            val d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            r.release()
-            d
-        } catch (_: Exception) { 0L }
-        if (durationMs > 31_000L) {
-            fail("Video too long — try a clip under 30 seconds")
-            return
-        }
-
-        var frame: Bitmap? = null
-        try {
-            val r = MediaMetadataRetriever()
-            r.setDataSource(file.absolutePath)
-            frame = r.getFrameAtTime(0)
-            r.release()
-        } catch (_: Exception) {}
-        frame?.let {
-            preview.setImageBitmap(it)
-            preview.visibility = android.view.View.VISIBLE
-        }
-
-        DetectionClient.detectVideo(this, file,
-            onResult = { pct ->
-                showScore(pct)
-                try { HistoryManager.add(this, pct, "Shared", frame) } catch (_: Exception) {}
             },
             onError = { fail(it) })
     }

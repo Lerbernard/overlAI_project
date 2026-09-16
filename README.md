@@ -6,14 +6,14 @@
 
 <p align="center">
   <b>Check anything on your screen for AI generation — in one tap.</b><br/>
-  A floating overlay, gallery detector, share-sheet target, and quick-settings tiles,<br/>
+  A floating overlay, gallery detector, share-sheet target, and quick-settings tiles (images only),<br/>
   all backed by a single detection pipeline with caching and quota tracking.
 </p>
 
 <p align="center">
-  <a href="https://lmbtechnology.com/overlai">Website</a> ·
-  <a href="https://lmbtechnology.com/overlai/privacy">Privacy policy</a> ·
-  <a href="https://lmbtechnology.com/overlai/support">Support</a> ·
+  <a href="https://lmbtechnology.com/ai-image-detector/app">Website</a> ·
+  <a href="https://lmbtechnology.com/ai-image-detector/app/privacy">Privacy policy</a> ·
+  <a href="https://lmbtechnology.com/ai-image-detector/app/support">Support</a> ·
   <a href="docs/play-store.md">Play Store listing &amp; release checklist</a>
 </p>
 
@@ -25,9 +25,9 @@ OverlAI answers one question everywhere on your phone: **"is this AI-generated?"
 
 | | |
 |---|---|
-| 🔮 **Floating overlay** | A draggable bubble over any app. Tap for the menu, **double-tap for an instant check**. Capture a screenshot, crop the part you care about, or record a short clip — the AI-likelihood score appears right in the bubble. |
-| 🔍 **Detector** | Pick any image or video from your device. Scan-line animation while analysing, then a verdict banner with likelihood, confidence, and media type. |
-| 📤 **Share target** | Long-press media in any app → Share → *Check with OverlAI* → instant score card. |
+| 🔮 **Floating overlay** | A draggable bubble over any app. Tap for the menu, **double-tap for an instant check**. Capture a screenshot or crop the part you care about — the AI-likelihood score appears right in the bubble. |
+| 🔍 **Detector** | Pick any image from your device. Scan-line animation while analysing, then a verdict banner with likelihood and confidence. |
+| 📤 **Share target** | Long-press a picture in any app → Share → *Check with OverlAI* → instant score card. |
 | ⚡ **Quick check tile** | A Quick Settings tile that screenshots, detects, saves to History, and notifies you with the score. |
 | 🕓 **History** | Every result with its thumbnail, grouped by day, with share, delete, and re-check actions. |
 | 📊 **Widgets** | A toggle widget and a dashboard widget with monthly usage and your last result. |
@@ -79,14 +79,14 @@ Release builds are signed from `keystore.properties` (gitignored) when it exists
 
 ## Privacy
 
-Media you check is sent over HTTPS to the relay and on to Sightengine for analysis; neither we
-nor the relay store it. Results and thumbnails are stored **only on your device**. Sign-in is
+Images you check are sent over HTTPS to the relay and on to Sightengine for analysis; neither we
+nor the relay store them. Results and thumbnails are stored **only on your device**. Sign-in is
 optional and only remembers a premium flag. Full policy:
-https://lmbtechnology.com/overlai/privacy
+https://lmbtechnology.com/ai-image-detector/app/privacy
 
 ## Tech
 
-Kotlin · Foreground services (`specialUse` + `mediaProjection`) · MediaProjection & MediaRecorder · Custom `View` drawing (every overlay icon is drawn in code) · RemoteViews widgets · TileService · OkHttp · Firebase Auth/Firestore (optional account)
+Kotlin · Foreground services (`specialUse` + `mediaProjection`) · MediaProjection · Custom `View` drawing (every overlay icon is drawn in code) · RemoteViews widgets · TileService · OkHttp · Firebase Auth/Firestore (optional account)
 
 ## Roadmap
 

@@ -15,7 +15,7 @@ class OutlineIconView(
     private val shapeStyle: Shape = Shape.CIRCLE
 ) : View(context) {
 
-    enum class Mode { PLUS, CLOSE, PHOTO, VIDEO, TRASH }
+    enum class Mode { PLUS, CLOSE, PHOTO, TRASH }
     enum class Shape { CIRCLE, ROUNDED_SQUARE }
 
     private var dark = true
@@ -40,7 +40,6 @@ class OutlineIconView(
         Mode.PLUS -> "Open OverlAI menu"
         Mode.CLOSE -> "Close menu"
         Mode.PHOTO -> "Check a photo"
-        Mode.VIDEO -> "Record and check video"
         Mode.TRASH -> "Remove overlay"
     }
 
@@ -154,22 +153,6 @@ class OutlineIconView(
 
                 canvas.drawCircle(cx, (bt + bb) / 2f, 5.5f * s, glyphPaint)
                 canvas.drawCircle(br - 4f * s, bt + 4f * s, 1.4f * s, fillPaint)
-            }
-            Mode.VIDEO -> {
-                val bl = cx - 14f * s; val br = cx + 5f * s
-                val bt = cy - 8f * s;  val bb = cy + 8f * s
-                canvas.drawRoundRect(bl, bt, br, bb, 3.5f * s, 3.5f * s, glyphPaint)
-
-                val lens = Path().apply {
-                    moveTo(br, cy - 4f * s)
-                    lineTo(cx + 13f * s, cy - 8f * s)
-                    lineTo(cx + 13f * s, cy + 8f * s)
-                    lineTo(br, cy + 4f * s)
-                    close()
-                }
-                canvas.drawPath(lens, glyphPaint)
-
-                canvas.drawCircle(bl + 6f * s, bt + 5f * s, 1.6f * s, fillPaint)
             }
             Mode.TRASH -> {
                 canvas.drawLine(cx - 3.5f * s, cy - 11f * s, cx + 3.5f * s, cy - 11f * s, glyphPaint)

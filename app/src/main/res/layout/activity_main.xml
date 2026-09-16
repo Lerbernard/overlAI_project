@@ -660,7 +660,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="4dp"
-                                android:text="Images: 0 · Videos: 0"
+                                android:text="Images checked: 0"
                                 android:textColor="@color/lm_text_primary"
                                 android:textSize="13sp" />
                         </LinearLayout>

@@ -194,8 +194,7 @@ class OverlayStatsWidget : AppWidgetProvider() {
             v.setTextColor(R.id.stats_status,
                 if (on) ContextCompat.getColor(context, R.color.dm_accent) else ContextCompat.getColor(context, R.color.widget_text_dim))
 
-            val (img, vid) = UsageTracker.counts(context)
-            v.setTextViewText(R.id.stats_checks, "${img + vid}")
+            v.setTextViewText(R.id.stats_checks, "${UsageTracker.counts(context)}")
 
             val last = HistoryManager.getAll(context).firstOrNull()
             if (last == null) {

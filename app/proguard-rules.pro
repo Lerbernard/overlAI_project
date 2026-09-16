@@ -30,9 +30,6 @@
 # --- org.json (used to parse Sightengine responses) ---
 -dontwarn org.json.**
 
-# --- Media3 / ExoPlayer (video preview) ---
--dontwarn androidx.media3.**
--keep class androidx.media3.** { *; }
 
 # --- Keep your custom Views (referenced from XML by name via reflection) ---
 -keep class com.example.test103.PillToggleView { *; }

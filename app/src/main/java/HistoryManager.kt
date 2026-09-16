@@ -21,13 +21,11 @@ object HistoryManager {
     data class Entry(
         val timestamp: Long,
         val score: Int,          // 0–100 AI probability
-        val source: String,      // "Overlay", "Image", "Video"
-        val thumbPath: String?,  // null if no thumbnail
-        val videoPath: String? = null   // ✅ playable copy, if this was a video
+        val source: String,      // "Overlay", "Image", "Shared"
+        val thumbPath: String?   // null if no thumbnail
     )
 
-    fun add(context: Context, score: Int, source: String,
-            thumbnail: Bitmap? = null, videoPath: String? = null) {
+    fun add(context: Context, score: Int, source: String, thumbnail: Bitmap? = null) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val arr = JSONArray(prefs.getString(KEY, "[]"))
 
@@ -49,7 +47,6 @@ object HistoryManager {
             put("score", score)
             put("source", source)
             put("thumb", thumbPath ?: JSONObject.NULL)
-            put("video", videoPath ?: JSONObject.NULL)
         }
 
         // Newest first
@@ -60,7 +57,8 @@ object HistoryManager {
         while (newArr.length() > MAX_ENTRIES) {
             val removed = newArr.getJSONObject(newArr.length() - 1)
             removed.optString("thumb", null)?.let { p -> runCatching { File(p).delete() } }
-            if (!removed.isNull("video")) runCatching { File(removed.optString("video")).delete() }
+            // entries written by older versions may still point at a video copy
+            if (removed.has("video") && !removed.isNull("video")) runCatching { File(removed.optString("video")).delete() }
             newArr.remove(newArr.length() - 1)
         }
 
@@ -80,8 +78,7 @@ object HistoryManager {
                 timestamp = o.optLong("ts"),
                 score = o.optInt("score"),
                 source = o.optString("source", "?"),
-                thumbPath = if (o.isNull("thumb")) null else o.optString("thumb"),
-                videoPath = if (o.isNull("video")) null else o.optString("video")
+                thumbPath = if (o.isNull("thumb")) null else o.optString("thumb")
             ))
         }
         return out
@@ -96,7 +93,7 @@ object HistoryManager {
             val o = arr.getJSONObject(i)
             if (o.optLong("ts") == timestamp) {
                 if (!o.isNull("thumb")) runCatching { File(o.optString("thumb")).delete() }
-                if (!o.isNull("video")) runCatching { File(o.optString("video")).delete() }
+                if (o.has("video") && !o.isNull("video")) runCatching { File(o.optString("video")).delete() }
             } else {
                 out.put(o)
             }
@@ -108,19 +105,8 @@ object HistoryManager {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().remove(KEY).apply()
         runCatching { File(context.filesDir, "history").deleteRecursively() }
-        runCatching { File(context.filesDir, "videos").deleteRecursively() }
+        runCatching { File(context.filesDir, "videos").deleteRecursively() }   // left by older versions
     }
-
-    /** ✅ persist a playable copy of a checked video; keeps only the newest 10
-     *  so storage stays bounded (older entries just lose their play button). */
-    fun saveVideoCopy(context: Context, src: File): String? = try {
-        val dir = File(context.filesDir, "videos").apply { mkdirs() }
-        val dst = File(dir, "v_${System.currentTimeMillis()}.mp4")
-        src.copyTo(dst, overwrite = true)
-        dir.listFiles()?.sortedByDescending { it.name }?.drop(10)
-            ?.forEach { runCatching { it.delete() } }
-        dst.absolutePath
-    } catch (_: Exception) { null }
 
     private fun scaleDown(src: Bitmap, maxDim: Int): Bitmap {
         val ratio = maxOf(src.width, src.height).toFloat() / maxDim
