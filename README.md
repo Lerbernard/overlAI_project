@@ -14,7 +14,8 @@
   <a href="https://lmbtechnology.com/ai-image-detector/app">Website</a> ·
   <a href="https://lmbtechnology.com/ai-image-detector/app/privacy">Privacy policy</a> ·
   <a href="https://lmbtechnology.com/ai-image-detector/app/support">Support</a> ·
-  <a href="docs/play-store.md">Play Store listing &amp; release checklist</a>
+  <a href="docs/play-store.md">Play Store listing &amp; release checklist</a> ·
+  <a href="HANDOFF.md">Handoff notes</a>
 </p>
 
 ---
