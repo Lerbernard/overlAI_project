@@ -59,6 +59,25 @@ Gradle 8.11.1 and AGP 8.9.1 are pinned in the wrapper and version catalog.
 Release builds are signed from `keystore.properties` (gitignored) when it exists; see
 [docs/play-store.md](docs/play-store.md) for the keystore, Play Console and Firebase steps.
 
+## Before the first release
+
+The app isn't safe to publish until these are done, and the first two happen outside this repo:
+
+1. **Publish the Firestore rules.** [`firestore.rules`](firestore.rules) is in the repo but not
+   deployed. Paste it into the Firebase console (project `overlai-ddd41`, Firestore Database,
+   Rules) or run `firebase deploy --only firestore:rules`. Until then the database is open to
+   writes, including the premium flag.
+2. **Rotate `APP_TOKEN`** in the Cloudflare worker (`overlai-proxy`) and put the new value in
+   `local.properties`. The token ships inside the APK, so rotate it for each release, keep the
+   worker's per-IP and per-token limits on, and reject retired versions using the
+   `X-App-Version` header.
+3. **Add the release certificate's SHA-1 and SHA-256 to Firebase** and download a fresh
+   `google-services.json`, or Google sign-in fails silently in the released build.
+4. Everything else, including the upload keystore, the Play Console forms and the
+   foreground-service declarations, is in [docs/play-store.md](docs/play-store.md).
+
+New here? [HANDOFF.md](HANDOFF.md) explains where the project stands and what changed recently.
+
 ## Security model
 
 - **No provider keys in the app.** Detection goes to the relay with `X-App-Token` and
